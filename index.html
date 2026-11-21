@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meteor Storm Simulator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="sky" aria-label="Simulated night sky with meteors, seen from the ground"></canvas>
+
+<div id="hud">
+  <div class="hud-rate"><span id="hudBig">44</span><span id="hudUnit">meteors / second</span></div>
+  <div class="hud-sub" id="hudSub"></div>
+  <div class="hud-seen"><span class="dot"></span><span id="hudSeen">Counting…</span></div>
+</div>
+
+<div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · H hide panel</div>
+
+<button id="openPanel" class="chip" type="button">Controls</button>
+
+<aside id="panel" aria-label="Simulation controls">
+  <div class="panel-head">
+    <div>
+      <h1>Meteor Storm Simulator</h1>
+      <p class="lede">Real time, seen from the ground by a dark-adapted eye.</p>
+    </div>
+    <button id="closePanel" class="icon-btn" type="button" aria-label="Hide controls">&times;</button>
+  </div>
+
+  <section>
+    <div class="label"><span>Meteor rate</span><output id="rateOut"></output></div>
+    <input type="range" id="rate" min="0" max="1000" step="1" aria-label="Meteor rate (logarithmic)">
+    <div class="scale"><span>4 / hr</span><span>4 / min</span><span>1 / s</span><span>1000 / s</span></div>
+    <div class="rate-row">
+      <input type="number" id="rateNum" min="0.001" max="1000" step="any" aria-label="Meteors per second">
+      <span>meteors per second</span>
+    </div>
+    <p class="note" id="compare"></p>
+  </section>
+
+  <section>
+    <div class="label"><span>Scenarios</span></div>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <section>
+    <div class="label"><span>Shower</span></div>
+    <div class="seg" id="showerSeg"></div>
+    <p class="note" id="showerNote"></p>
+  </section>
+
+  <section>
+    <div class="label"><span>Sky darkness</span><output id="lmOut"></output></div>
+    <input type="range" id="lm" min="3" max="7" step="0.1" aria-label="Limiting magnitude">
+    <div class="scale"><span>City</span><span>Suburb</span><span>Rural</span><span>Pristine</span></div>
+  </section>
+
+  <section>
+    <div class="label"><span>Field of view</span><output id="fovOut"></output></div>
+    <input type="range" id="fov" min="30" max="120" step="1" aria-label="Field of view in degrees">
+  </section>
+
+  <section>
+    <div class="label"><span>Time</span></div>
+    <div class="seg" id="timeSeg">
+      <button type="button" data-t="0">Pause</button>
+      <button type="button" data-t="0.1">0.1×</button>
+      <button type="button" data-t="0.25">0.25×</button>
+      <button type="button" data-t="1">Real time</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="label"><span>The rate counts meteors across</span></div>
+    <div class="seg" id="modeSeg">
+      <button type="button" data-m="sky">The whole sky</button>
+      <button type="button" data-m="view">Just this view</button>
+    </div>
+    <label class="check"><input type="checkbox" id="showRadiant"> Show the radiant</label>
+  </section>
+
+  <section>
+    <div class="label"><span>Tally</span><button id="resetTally" class="link-btn" type="button">Reset</button></div>
+    <dl class="stats">
+      <dt>Seen in this view</dt><dd id="stSeen">0</dd>
+      <dt>Fireballs (brighter than Venus)</dt><dd id="stFire">0</dd>
+      <dt>Visible right now</dt><dd id="stNow">0</dd>
+      <dt>Elapsed</dt><dd id="stTime">0:00</dd>
+    </dl>
+    <button id="fullscreen" class="chip wide" type="button">Fullscreen</button>
+  </section>
+
+  <details>
+    <summary>How this is modelled</summary>
+    <ul>
+      <li>The rate is how many meteors a dark-adapted observer would see over the whole sky under a pristine sky (limiting magnitude 6.5). A screen shows only part of the sky, so the counter shows how many land in your view. Pick <em>Just this view</em> to put all of them in front of you.</li>
+      <li>Meteors burn up about 100 km high. Their angular speed and length come from the shower's speed, their distance from you and their distance from the radiant. Near the radiant they're short and slow, and about 90° away they're longest.</li>
+      <li>Near the horizon meteors are up to ~1,100 km away and seen through more air, so they're fainter and fewer.</li>
+      <li>Brightness follows a population index of about 2.5: each step of one magnitude brighter is about 2.5× rarer. Bright, fast meteors can leave glowing trains that drift and fade.</li>
+      <li>Light pollution hides faint meteors and stars, just as it would for your eyes.</li>
+      <li>The stars, Milky Way and treeline are generated, not a real star chart.</li>
+    </ul>
+  </details>
+</aside>
+
+<script src="sim.js"></script>
+</body>
+</html>
