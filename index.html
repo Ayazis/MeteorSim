@@ -42,11 +42,12 @@
   <section>
     <div class="label"><span>Scenarios</span></div>
     <div class="presets" id="presets"></div>
+    <p class="note" id="presetNote" hidden></p>
   </section>
 
   <section>
     <div class="label"><span>Shower</span></div>
-    <div class="seg" id="showerSeg"></div>
+    <div class="seg wrap" id="showerSeg"></div>
     <p class="note" id="showerNote"></p>
   </section>
 
@@ -81,6 +82,12 @@
   </section>
 
   <section>
+    <div class="label"><span>Comet</span><button id="findComet" class="link-btn" type="button">Look at it</button></div>
+    <label class="check"><input type="checkbox" id="showComet" checked> Show a bright comet (C)</label>
+    <p class="note">Low in the east before dawn, like Hale–Bopp in 1997. The blue gas tail points straight away from the Sun, below the horizon. The yellowish dust tail curves away from it. Light pollution shortens both.</p>
+  </section>
+
+  <section>
     <div class="label"><span>Tally</span><button id="resetTally" class="link-btn" type="button">Reset</button></div>
     <dl class="stats">
       <dt>Seen in this view</dt><dd id="stSeen">0</dd>
@@ -99,7 +106,8 @@
       <li>Near the horizon meteors are up to ~1,100 km away and seen through more air, so they're fainter and fewer.</li>
       <li>Brightness follows a population index of about 2.5: each step of one magnitude brighter is about 2.5× rarer. Bright, fast meteors can leave glowing trains that drift and fade.</li>
       <li>Light pollution hides faint meteors and stars, just as it would for your eyes.</li>
-      <li>The stars, Milky Way and treeline are generated, not a real star chart.</li>
+      <li>The comet sits still among the stars, as a real one does over a night's watch. It isn't tied to the shower.</li>
+      <li>The stars, Milky Way, comet and treeline are generated, not a real star chart.</li>
     </ul>
   </details>
 </aside>

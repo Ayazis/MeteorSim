@@ -169,6 +169,15 @@ input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
 .preset span { font-size: 11.5px; color: var(--muted); }
 .preset:hover { background: rgba(255, 255, 255, 0.08); }
 .preset.active { border-color: var(--accent); background: var(--accent-bg); }
+.preset-group {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.preset-group:first-child { margin-top: 0; }
 
 .seg {
   display: flex;
@@ -190,6 +199,8 @@ input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
 }
 .seg button:hover { color: var(--text); }
 .seg button.active { background: var(--accent-bg); color: var(--text); }
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 0 30%; }
 
 .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
 .check input { accent-color: var(--accent); }

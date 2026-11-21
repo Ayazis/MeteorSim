@@ -21,16 +21,58 @@
       note: '59 km/s, radiant in Perseus. The classic August shower, rich in bright meteors.' },
     geminids: { name: 'Geminids', v: 35, az: 160, alt: 68, r: 2.6, trainProb: 0.04,
       note: '35 km/s. Slower, longer-lasting and yellowish-white. Trains are rare.' },
+    quadrantids: { name: 'Quadrantids', v: 41, az: 40, alt: 62, r: 2.1, trainProb: 0.08,
+      note: '41 km/s, radiant in northern Boötes. A sharp January peak lasting only a few hours, with some bright, bluish meteors.' },
+    lyrids:   { name: 'Lyrids',   v: 49, az: 70,  alt: 64, r: 2.1, trainProb: 0.25,
+      note: '49 km/s, radiant near Vega. One of the oldest recorded showers, seen for about 2,700 years. Normally modest, with rare outbursts.' },
+    etaAquariids: { name: 'η Aquariids', v: 66, az: 105, alt: 22, r: 2.4, trainProb: 0.6,
+      note: '66 km/s, from Halley\'s Comet. The radiant is low before dawn, so many meteors skim the atmosphere and draw long, shallow trails.' },
+    orionids: { name: 'Orionids', v: 66, az: 150, alt: 55, r: 2.5, trainProb: 0.55,
+      note: '66 km/s, also from Halley\'s Comet. A gentle October shower with fast meteors that often leave trains.' },
+    draconids: { name: 'Draconids', v: 20, az: 320, alt: 62, r: 2.6, trainProb: 0.01,
+      note: '20 km/s, one of the slowest showers, seen in the evening. Usually almost absent, but it has stormed when Earth crossed fresh dust from comet Giacobini–Zinner.' },
     sporadic: { name: 'Sporadic', v: 0,   az: 0,   alt: 0,  r: 3.0, trainProb: 0.3,
       note: 'Background meteors from random directions and at random speeds, with no radiant.' },
   };
 
+  // Rates are what a dark-adapted observer would see over the whole sky under a pristine sky,
+  // close to the shower's ZHR. A scenario with `lm` also sets the sky darkness.
   const PRESETS = [
-    { label: 'Ordinary night',   sub: '~10 per hour',     rate: 10 / 3600,   shower: 'sporadic' },
-    { label: 'Perseids peak',    sub: '~100 per hour',    rate: 100 / 3600,  shower: 'perseids' },
-    { label: 'Geminids peak',    sub: '~150 per hour',    rate: 150 / 3600,  shower: 'geminids' },
-    { label: 'Leonids 2001',     sub: '~3,000 per hour',  rate: 3000 / 3600, shower: 'leonids' },
-    { label: 'Leonids 1966',     sub: '~40 per second',   rate: 40,          shower: 'leonids' },
+    { group: 'Any clear night' },
+    { label: 'Ordinary night',   sub: '~10 per hour',     rate: 10 / 3600,   shower: 'sporadic', lm: 6.5,
+      note: 'No shower active. Sporadic meteors arrive all year at a few to ten per hour, more after midnight.' },
+    { label: 'Perseids, city',   sub: 'Peak, mag 3.5 sky', rate: 100 / 3600, shower: 'perseids', lm: 3.5,
+      note: 'The same Perseids peak seen from a lit-up city. Only the brightest get through, so most people count a handful per hour.' },
+    { label: 'Perseids, suburbs', sub: 'Peak, mag 5 sky', rate: 100 / 3600, shower: 'perseids', lm: 5.0,
+      note: 'A typical backyard on peak night. You lose most of the meteors a pristine site would show.' },
+
+    { group: 'Yearly showers at their peak' },
+    { label: 'Quadrantids',      sub: '3–4 Jan · ~110/hr', rate: 110 / 3600, shower: 'quadrantids', lm: 6.5,
+      note: 'One of the strongest showers of the year, but the peak lasts only about six hours and January weather often hides it.' },
+    { label: 'Lyrids',           sub: '22 Apr · ~18/hr',  rate: 18 / 3600,  shower: 'lyrids', lm: 6.5,
+      note: 'A modest spring shower. It surprised observers with about 90 per hour in 1982.' },
+    { label: 'η Aquariids',      sub: '6 May · ~50/hr',   rate: 50 / 3600,  shower: 'etaAquariids', lm: 6.5,
+      note: 'Best from the Southern Hemisphere. From mid-northern latitudes the radiant barely rises before dawn and you see far fewer.' },
+    { label: 'Perseids peak',    sub: '12 Aug · ~100/hr', rate: 100 / 3600, shower: 'perseids', lm: 6.5,
+      note: 'The best-known shower: warm nights and plenty of bright meteors and fireballs.' },
+    { label: 'Orionids',         sub: '21 Oct · ~20/hr',  rate: 20 / 3600,  shower: 'orionids', lm: 6.5,
+      note: 'Halley\'s debris, met for the second time each year. From 2006 to 2009 it ran at 50–70 per hour.' },
+    { label: 'Geminids peak',    sub: '14 Dec · ~150/hr', rate: 150 / 3600, shower: 'geminids', lm: 6.5,
+      note: 'Now the richest yearly shower, from the rocky asteroid 3200 Phaethon rather than a comet.' },
+
+    { group: 'Outbursts and storms' },
+    { label: 'Draconids 2011',   sub: '~400 per hour',    rate: 400 / 3600,  shower: 'draconids', lm: 6.5,
+      note: 'An outburst predicted to within minutes, on 8 October 2011. Slow meteors in the early evening sky.' },
+    { label: 'Leonids 1999',     sub: '~3,700 per hour',  rate: 3700 / 3600, shower: 'leonids', lm: 6.5,
+      note: 'Seen from Europe and the Middle East on 18 November 1999. The peak lasted under an hour.' },
+    { label: 'Leonids 2001',     sub: '~3,000 per hour',  rate: 3000 / 3600, shower: 'leonids', lm: 6.5,
+      note: 'Seen from East Asia and Australia, with many bright meteors and fireballs.' },
+    { label: 'Draconids 1933',   sub: '~10,000 per hour', rate: 10000 / 3600, shower: 'draconids', lm: 6.5,
+      note: 'Over Europe on 9 October 1933: a slow evening storm, strongest for about an hour.' },
+    { label: 'Leonids 1833',     sub: '~20 per second (est.)', rate: 20, shower: 'leonids', lm: 6.5,
+      note: 'Seen across North America on 13 November 1833. It led to the discovery that a shower\'s meteors come from one radiant.' },
+    { label: 'Leonids 1966',     sub: '~40 per second',   rate: 40,          shower: 'leonids', lm: 6.5,
+      note: 'Over the western United States on 17 November 1966. Observers in Arizona saw meteors fall like rain for about 20 minutes.' },
     { label: '44 per second',    sub: '158,400 per hour', rate: 44,          shower: 'leonids' },
   ];
 
@@ -69,7 +111,7 @@
   const expRand = rate => -Math.log(1 - Math.random()) / rate;
 
   // ------------------------------------------------------------------ state
-  const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false };
+  const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true };
   let radVec = dir(SHOWERS.leonids.az * DEG, SHOWERS.leonids.alt * DEG);
   const setRadiant = (az, alt) => { radVec = dir(az, alt); };
 
@@ -196,6 +238,53 @@
   }
   const terrainAt = az => terr[((Math.round((az / DEG) * 10) % TN) + TN) % TN];
 
+  // Comet: a bright one low in the east before dawn. It sits still among the stars over a night's
+  // watch. The gas (ion) tail points straight away from the Sun; the dust tail curves behind it.
+  const COMET = { az: 80, alt: 12, sunAz: 95, sunAlt: -20, ionLen: 24, dustLen: 16 };
+  const dustSprite = makeSprite(32, [[0, 'rgba(255,238,212,1)'], [0.5, 'rgba(255,230,200,0.35)'], [1, 'rgba(255,225,190,0)']]);
+  const ionSprite = makeSprite(32, [[0, 'rgba(140,185,255,1)'], [0.5, 'rgba(130,175,255,0.3)'], [1, 'rgba(120,165,255,0)']]);
+  const comaSprite = makeSprite(64, [[0, 'rgba(225,255,232,1)'], [0.2, 'rgba(175,240,205,0.5)'], [1, 'rgba(140,220,180,0)']]);
+  const comet = (() => {
+    const crand = mulberry32(1997);
+    const head = dir(COMET.az * DEG, COMET.alt * DEG), sun = dir(COMET.sunAz * DEG, COMET.sunAlt * DEG);
+    const c = dot(head, sun);
+    const t = norm([head[0] * c - sun[0], head[1] * c - sun[1], head[2] * c - sun[2]]); // away from the Sun
+    const n = cross(head, t);
+    const pts = [];
+    // s: degrees along the tail, l: degrees to the side, r: sprite radius in degrees
+    const add = (s, l, r, a, u, sprite) => {
+      const cs = Math.cos(s * DEG), sn = Math.sin(s * DEG), lt = l * DEG;
+      const v = norm([head[0] * cs + t[0] * sn + n[0] * lt, head[1] * cs + t[1] * sn + n[1] * lt, head[2] * cs + t[2] * sn + n[2] * lt]);
+      if (v[2] < -0.02) return;
+      const ext = Math.pow(10, -0.4 * EXT_K * (airmass(Math.asin(v[2])) - 1));
+      pts.push({ v, r, a: a * ext, u, sprite });
+    };
+    // Dust tail: a fan of synchrones, curving more the older the dust.
+    const NS = 9;
+    for (let j = 0; j < NS; j++) {
+      const f = j / (NS - 1), len = COMET.dustLen * (1 - 0.4 * f) * (0.9 + crand() * 0.2);
+      const br = (1 - 0.55 * f) * (0.75 + crand() * 0.5);
+      const N = 110;
+      for (let k = 1; k <= N; k++) {
+        const u = k / N, s = u * len;
+        add(s, (1.6 + 4 * f) * u * u * COMET.dustLen / 10, 0.35 + u * 1.9, 0.06 * br * (1 - u) ** 1.2, s / COMET.ionLen, dustSprite);
+      }
+    }
+    // Ion tail: thin, slightly diverging rays with knots.
+    for (let j = 0; j < 7; j++) {
+      const ang = gauss(crand) * 0.03, len = COMET.ionLen * (0.6 + crand() * 0.4);
+      const br = 0.4 + crand() * 0.6, fq = 8 + crand() * 14, ph = crand() * TAU;
+      const N = 160;
+      for (let k = 1; k <= N; k++) {
+        const u = k / N, s = u * len;
+        const knots = (0.65 + 0.35 * Math.sin(u * fq + ph)) ** 2;
+        add(s, s * ang, 0.15 + u * 0.55, 0.3 * br * knots * (1 - u) ** 0.8, s / COMET.ionLen, ionSprite);
+      }
+    }
+    const ext = Math.pow(10, -0.4 * EXT_K * (airmass(COMET.alt * DEG) - 1));
+    return { head, t, pts, ext };
+  })();
+
   // ------------------------------------------------------------------ cached layers
   function skyColors() {
     const t = clamp((6.6 - S.lm) / 3.4, 0, 1);
@@ -247,8 +336,38 @@
       if (r < 0.9) c.fillRect(p[0] - r, p[1] - r, r * 2, r * 2);
       else { c.beginPath(); c.arc(p[0], p[1], r, 0, TAU); c.fill(); }
     }
+    if (S.comet) drawComet(c, quick);
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
+  }
+
+  function drawComet(c, quick) {
+    // A bright sky drowns the faint outer tail first, then the rest.
+    const dark = clamp((S.lm - 2.8) / 3.7, 0, 1);
+    const fade = (6.8 - S.lm) * 1.1;
+    const pxPerDeg = focal * DEG;
+    for (let i = 0; i < comet.pts.length; i += quick ? 2 : 1) {
+      const q = comet.pts[i];
+      const a = q.a * dark * Math.exp(-q.u * fade) * (quick ? 2 : 1);
+      if (a < 0.002) continue;
+      const sz = Math.max(2, 2 * q.r * pxPerDeg);
+      const p = project(q.v);
+      if (!p || !onScreen(p, sz)) continue;
+      c.globalAlpha = Math.min(1, a);
+      c.drawImage(q.sprite, p[0] - sz / 2, p[1] - sz / 2, sz, sz);
+    }
+    const p = project(comet.head);
+    if (!p || !onScreen(p, 40)) return;
+    const x = p[0], y = p[1], e = comet.ext * (0.45 + 0.55 * dark);
+    for (const [rDeg, a] of [[0.9, 0.22], [0.35, 0.5], [0.12, 0.9]]) {
+      const sz = Math.max(4, 2 * rDeg * pxPerDeg);
+      c.globalAlpha = a * e;
+      c.drawImage(comaSprite, x - sz / 2, y - sz / 2, sz, sz);
+    }
+    c.globalAlpha = Math.min(1, e * 1.2);
+    c.drawImage(glow, x - 5, y - 5, 10, 10);
+    c.fillStyle = 'rgb(255,255,245)';
+    c.beginPath(); c.arc(x, y, 1.3, 0, TAU); c.fill();
   }
 
   function renderFg() {
@@ -551,9 +670,9 @@
   const el = {
     hudBig: $('hudBig'), hudUnit: $('hudUnit'), hudSub: $('hudSub'), hudSeen: $('hudSeen'),
     rate: $('rate'), rateNum: $('rateNum'), rateOut: $('rateOut'), compare: $('compare'),
-    presets: $('presets'), showerSeg: $('showerSeg'), showerNote: $('showerNote'),
+    presets: $('presets'), presetNote: $('presetNote'), showerSeg: $('showerSeg'), showerNote: $('showerNote'),
     lm: $('lm'), lmOut: $('lmOut'), fov: $('fov'), fovOut: $('fovOut'),
-    timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'),
+    timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'), showComet: $('showComet'),
     stSeen: $('stSeen'), stFire: $('stFire'), stNow: $('stNow'), stTime: $('stTime'),
   };
 
@@ -598,10 +717,16 @@
       ? `About ${nf.format(Math.round(x))}× a Perseids peak (~100 per hour).`
       : x >= 0.67 ? 'About the rate of a Perseids peak (~100 per hour).'
       : `About 1/${Math.round(1 / x)} of a Perseids peak (~100 per hour).`;
-    for (const [i, b] of [...el.presets.children].entries()) {
-      const pr = PRESETS[i];
-      b.classList.toggle('active', Math.abs(S.rate - pr.rate) / pr.rate < 0.01 && S.shower === pr.shower);
+    let note = '';
+    for (const b of el.presets.querySelectorAll('.preset')) {
+      const pr = PRESETS[+b.dataset.i];
+      const on = Math.abs(S.rate - pr.rate) / pr.rate < 0.01 && S.shower === pr.shower
+        && (pr.lm === undefined || Math.abs(S.lm - pr.lm) < 0.05);
+      b.classList.toggle('active', on);
+      if (on && pr.note && !note) note = pr.note;
     }
+    el.presetNote.textContent = note;
+    el.presetNote.hidden = !note;
   }
 
   function setRate(r, from) {
@@ -651,11 +776,20 @@
   }
 
   // build preset buttons and shower segment
-  PRESETS.forEach(pr => {
+  PRESETS.forEach((pr, i) => {
+    if (pr.group) {
+      const h = document.createElement('div');
+      h.className = 'preset-group'; h.textContent = pr.group;
+      el.presets.appendChild(h);
+      return;
+    }
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'preset';
+    b.type = 'button'; b.className = 'preset'; b.dataset.i = i;
     b.innerHTML = `<b>${pr.label}</b><span>${pr.sub}</span>`;
-    b.addEventListener('click', () => { setShower(pr.shower); setRate(pr.rate); });
+    b.addEventListener('click', () => {
+      if (pr.lm !== undefined) setLm(pr.lm);
+      setShower(pr.shower); setRate(pr.rate);
+    });
     el.presets.appendChild(b);
   });
   for (const [key, sh] of Object.entries(SHOWERS)) {
@@ -669,9 +803,12 @@
   el.rateNum.addEventListener('input', () => { const v = parseFloat(el.rateNum.value); if (v > 0) setRate(v, 'num'); });
   el.rateNum.addEventListener('change', () => setRate(S.rate));
 
-  el.lm.addEventListener('input', () => {
-    S.lm = +el.lm.value; el.lmOut.textContent = lmLabel(S.lm); skyDirty = true; resetSeen();
-  });
+  function setLm(lm, from) {
+    S.lm = lm; if (from !== 'slider') el.lm.value = lm;
+    el.lmOut.textContent = lmLabel(S.lm); skyDirty = true; resetSeen();
+    refreshRateUi();
+  }
+  el.lm.addEventListener('input', () => setLm(+el.lm.value, 'slider'));
   const syncFov = () => { el.fov.value = Math.round(cam.fov / DEG); el.fovOut.textContent = `${Math.round(cam.fov / DEG)}°`; };
   el.fov.addEventListener('input', () => { cam.fov = +el.fov.value * DEG; updateCam(); syncFov(); });
 
@@ -686,6 +823,14 @@
     S.mode = b.dataset.m; setSeg(el.modeSeg, 'm', S.mode); resetSeen();
   });
   el.showRadiant.addEventListener('change', () => { S.showRadiant = el.showRadiant.checked; });
+  const setComet = on => { S.comet = el.showComet.checked = on; skyDirty = true; };
+  el.showComet.addEventListener('change', () => setComet(el.showComet.checked));
+  $('findComet').addEventListener('click', () => {
+    setComet(true);
+    // frame the head low in the view with the tail rising above it
+    const mid = arcPoint({ P: comet.head, t: comet.t }, COMET.ionLen * 0.35 * DEG);
+    cam.yaw = azOf(mid); cam.pitch = Math.asin(mid[2]); updateCam();
+  });
   $('resetTally').addEventListener('click', () => { totalSeen = 0; fireballs = 0; tallyStart = simT; updateHud(); });
   $('fullscreen').addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -748,6 +893,7 @@
     if (k === ' ') { e.preventDefault(); setTime(S.timeScale === 0 ? lastSpeed : 0); }
     else if (k === 'h') setPanel(document.body.classList.contains('ui-hidden'));
     else if (k === 'z') document.body.classList.toggle('zen');
+    else if (k === 'c') setComet(!S.comet);
     else if (k === 'f') $('fullscreen').click();
     else if (k === 'arrowleft') { cam.yaw -= 5 * DEG; updateCam(); }
     else if (k === 'arrowright') { cam.yaw += 5 * DEG; updateCam(); }
@@ -757,7 +903,7 @@
   window.addEventListener('resize', resize);
 
   // handy for poking at the simulation from the browser console
-  window.meteorSim = { S, cam, meteors, trains, render, setRate: r => setRate(r),
+  window.meteorSim = { S, cam, meteors, trains, comet, render, setRate: r => setRate(r),
     project: v => { const p = project(v); return p && [p[0], p[1]]; }, arcPoint };
 
   // ------------------------------------------------------------------ start
