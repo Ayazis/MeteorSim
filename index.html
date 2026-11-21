@@ -27,6 +27,12 @@
   <div class="hud-seen"><span class="dot"></span><span id="hudSeen">Counting…</span></div>
 </div>
 
+<div id="compass" aria-label="View direction">
+  <canvas id="compassTape" aria-hidden="true"></canvas>
+  <div class="compass-read" id="compassRead"></div>
+  <div class="compass-clock" id="hudClock"></div>
+</div>
+
 <div id="skyCard" hidden role="status" aria-live="polite"></div>
 
 <div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · I sky guide · H hide panel</div>
@@ -60,30 +66,65 @@
   </section>
 
   <section>
+    <div class="label"><span>Famous impacts</span></div>
+    <div class="impact-list" id="impactList"></div>
+    <p class="note">Replays a real superbolide or impact over your view, with its measured or estimated size, speed, angle and energy.</p>
+  </section>
+
+  <section>
     <div class="label"><span>Shower</span></div>
     <div class="seg wrap" id="showerSeg"></div>
     <p class="note" id="showerNote"></p>
   </section>
 
   <section>
-    <div class="label"><span>Sky darkness</span><output id="lmOut"></output></div>
-    <input type="range" id="lm" min="3" max="7" step="0.1" aria-label="Limiting magnitude">
-    <div class="scale"><span>City</span><span>Suburb</span><span>Rural</span><span>Pristine</span></div>
+    <div class="label"><span>Location</span><output id="locOut"></output></div>
+    <select id="site" class="field wide" aria-label="Observing site"></select>
+    <div class="rate-row coords">
+      <label>Lat <input type="number" id="lat" min="-90" max="90" step="0.01" aria-label="Latitude, degrees north"></label>
+      <label>Lon <input type="number" id="lon" min="-180" max="180" step="0.01" aria-label="Longitude, degrees east"></label>
+      <button id="geo" class="link-btn" type="button">Use my location</button>
+    </div>
+    <p class="note" id="siteNote"></p>
+  </section>
+
+  <section>
+    <div class="label"><span>Date and time</span><output id="todOut"></output></div>
+    <div class="rate-row">
+      <input type="date" id="date" class="field" aria-label="Date">
+      <button id="nowBtn" class="chip" type="button">Now</button>
+    </div>
+    <input type="range" id="tod" min="0" max="1439" step="1" aria-label="Time of day" class="tod">
+    <div class="scale"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    <p class="note" id="sunNote"></p>
+  </section>
+
+  <section>
+    <div class="label"><span>Light pollution</span><output id="lmOut"></output></div>
+    <input type="range" id="lm" min="1" max="9" step="0.1" aria-label="Light pollution, Bortle class 1 to 9">
+    <div class="scale"><span>1 Pristine</span><span>3 Rural</span><span>5 Suburb</span><span>7 Urban</span><span>9 City</span></div>
+    <p class="note" id="lmNote"></p>
   </section>
 
   <section>
     <div class="label"><span>Field of view</span><output id="fovOut"></output></div>
     <input type="range" id="fov" min="30" max="120" step="1" aria-label="Field of view in degrees">
+    <label class="check"><input type="checkbox" id="showCardinals" checked> Compass points on the horizon</label>
+    <label class="check"><input type="checkbox" id="showTent" checked> Show the tent</label>
   </section>
 
   <section>
-    <div class="label"><span>Time</span></div>
-    <div class="seg" id="timeSeg">
+    <div class="label"><span>Speed</span></div>
+    <div class="seg wrap speeds" id="timeSeg">
       <button type="button" data-t="0">Pause</button>
       <button type="button" data-t="0.1">0.1×</button>
       <button type="button" data-t="0.25">0.25×</button>
       <button type="button" data-t="1">Real time</button>
+      <button type="button" data-t="60">60×</button>
+      <button type="button" data-t="600">600×</button>
+      <button type="button" data-t="3600">3600×</button>
     </div>
+    <p class="note">Faster than real time, the clock and the turning sky speed up but meteors keep their real pace.</p>
   </section>
 
   <section>
@@ -120,10 +161,12 @@
       <li>Meteors burn up about 100 km high. Their angular speed and length come from the shower's speed, their distance from you and their distance from the radiant. Near the radiant they're short and slow, and about 90° away they're longest.</li>
       <li>Near the horizon meteors are up to ~1,100 km away and seen through more air, so they're fainter and fewer.</li>
       <li>Brightness follows a population index of about 2.5: each step of one magnitude brighter is about 2.5× rarer. Bright, fast meteors can leave glowing trains that drift and fade.</li>
-      <li>Light pollution hides faint meteors and stars, just as it would for your eyes.</li>
+      <li>Light pollution is set on the Bortle scale. Each class maps to a typical sky brightness (SQM, in mag/arcsec²), and that to the faintest star you can see. It hides faint meteors and stars, just as it would for your eyes.</li>
+      <li>The sky is computed for the chosen place and moment: sidereal time from the UTC date and longitude, and the observer's latitude. Each shower's radiant sits at its real position among the stars, so it rises and sets. A shower's rate scales with the sine of the radiant's altitude, as the ZHR does, so a radiant below the horizon gives almost no meteors. Scenarios jump to the shower's peak night, at the darkest hour with the radiant highest for your location.</li>
+      <li>The Sun and Moon come from low-precision ephemerides. Twilight and moonlight brighten the sky (and the brightness sets the limiting magnitude), so stars and meteors fade through astronomical, nautical and civil twilight until only fireballs show in daylight. The Moon is drawn with its phase, its lit side toward the Sun. The clock uses local standard time, without daylight saving.</li>
       <li>The comet sits still among the stars, as a real one does over a night's watch. It isn't tied to the shower.</li>
-      <li>The stars and Milky Way are a real all-sky map (NASA's Deep Star Maps 2020, from Gaia, Hipparcos and Tycho data), turned to the horizon of a site at 45° north at the time of night each shower is best seen. Toward the horizon they dim and redden through more air, faint light loses its colour as it does for night vision, and stars twinkle more low down.</li>
-      <li>The comet and the landscape are invented. Without WebGL2, or when the page is opened straight from disk, the stars and Milky Way are generated too.</li>
+      <li>The stars and Milky Way are a real all-sky map (NASA's Deep Star Maps 2020, from Gaia, Hipparcos and Tycho data), turned to the horizon of the chosen site at the chosen time. Toward the horizon they dim and redden through more air, faint light loses its colour as it does for night vision, and stars twinkle more low down.</li>
+      <li>The comet stays fixed above the landscape rather than among the stars. The comet, the landscape and the tent are invented. Without WebGL2, or when the page is opened straight from disk, the stars and Milky Way are generated too.</li>
     </ul>
     <p class="credit">Star map: NASA/Goddard Space Flight Center Scientific Visualization Studio, <a href="https://svs.gsfc.nasa.gov/4851/" target="_blank" rel="noopener">Deep Star Maps 2020</a>. Gaia DR2: ESA/Gaia/DPAC.</p>
   </details>
@@ -132,5 +175,6 @@
 <script src="skygl.js"></script>
 <script src="skyinfo.js"></script>
 <script src="sim.js"></script>
+<script src="impacts.js"></script>
 </body>
 </html>

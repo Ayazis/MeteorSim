@@ -22,6 +22,7 @@ uniform vec3 uF, uR, uU;
 uniform float uFocal, uLat, uLst, uTime;
 uniform float uExposure, uThresh, uStarBoost, uPollution, uHasTex, uDomeAz;
 uniform vec3 uZen, uHor, uDome, uGround;
+uniform vec3 uSunDir, uSunCol, uMoonDir, uMoonCol;   // glow around the Sun (twilight, day) and the Moon
 out vec4 outColor;
 
 const float PI = 3.14159265359;
@@ -97,6 +98,14 @@ void main() {
   // A town's light dome in one direction, plus general glow all round.
   float toward = 0.5 + 0.5 * cos(az - uDomeAz);
   sky += uDome * uPollution * exp(-max(altd, 0.0) / 13.0) * (0.3 + 0.7 * toward * toward);
+  // Sunlight scattered in the air: a bright aureole round the Sun, and a glow along the horizon
+  // on its side of the sky that fades up the sky and away from it.
+  float cs = dot(d, uSunDir);
+  float low = exp(-max(altd, 0.0) / 9.0);
+  sky += uSunCol * (0.9 * exp((cs - 1.0) * 25.0) + 0.35 * pow(max(cs, 0.0), 5.0) + low * (0.25 + 0.75 * pow(0.5 + 0.5 * cs, 3.0)));
+  // Moonlight: a halo round the Moon.
+  float cm = dot(d, uMoonDir);
+  sky += uMoonCol * (2.5 * exp((cm - 1.0) * 60.0) + 0.6 * pow(max(cm, 0.0), 6.0));
 
   vec3 col = alt < 0.0 ? uGround : sky + star;
   col = toSrgb(col);
@@ -152,7 +161,8 @@ void main() {
 
     const loc = {};
     for (const n of ['uSky', 'uRes', 'uF', 'uR', 'uU', 'uFocal', 'uLat', 'uLst', 'uTime', 'uExposure', 'uThresh',
-      'uStarBoost', 'uPollution', 'uHasTex', 'uDomeAz', 'uZen', 'uHor', 'uDome', 'uGround']) {
+      'uStarBoost', 'uPollution', 'uHasTex', 'uDomeAz', 'uZen', 'uHor', 'uDome', 'uGround',
+      'uSunDir', 'uSunCol', 'uMoonDir', 'uMoonCol']) {
       loc[n] = gl.getUniformLocation(prog, n);
     }
     gl.uniform1i(loc.uSky, 0);
@@ -199,6 +209,8 @@ void main() {
       gl.uniform1f(loc.uDomeAz, u.domeAz);
       gl.uniform3fv(loc.uZen, u.zen); gl.uniform3fv(loc.uHor, u.hor);
       gl.uniform3fv(loc.uDome, u.dome); gl.uniform3fv(loc.uGround, u.ground);
+      gl.uniform3fv(loc.uSunDir, u.sunDir || [0, 0, -1]); gl.uniform3fv(loc.uSunCol, u.sunCol || [0, 0, 0]);
+      gl.uniform3fv(loc.uMoonDir, u.moonDir || [0, 0, -1]); gl.uniform3fv(loc.uMoonCol, u.moonCol || [0, 0, 0]);
       if (tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }

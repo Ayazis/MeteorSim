@@ -369,3 +369,99 @@ button:focus-visible, input:focus-visible, summary:focus-visible {
 #skyCard dt { color: var(--faint); }
 #skyCard dd { margin: 0; font-variant-numeric: tabular-nums; }
 
+/* ---------- Famous impacts (impacts.js) ---------- */
+#impacts {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  pointer-events: none;
+}
+.impact-list { display: grid; gap: 4px; }
+.impact-list button {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text); font: inherit; font-size: 13px; text-align: left;
+  cursor: pointer;
+}
+.impact-list button small { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
+.impact-list button:hover { background: rgba(255, 255, 255, 0.07); }
+.impact-list button[aria-pressed="true"] { background: var(--accent-bg); border-color: rgba(155, 215, 255, 0.35); }
+#impactCard {
+  position: fixed; left: 24px; bottom: 24px; z-index: 20;
+  width: 340px; max-width: calc(100vw - 32px); max-height: calc(100vh - 140px); overflow: auto;
+  padding: 16px 18px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+#impactCard[hidden] { display: none; }
+#impactCard .ic-head { display: flex; justify-content: space-between; gap: 12px; }
+#impactCard h2 { margin: 2px 0 10px; font-size: 18px; font-weight: 500; }
+#impactCard .ic-kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+#impactCard .ic-view { font-size: 12px; color: var(--faint); margin: 6px 0 12px; }
+#impactCard .ic-actions { display: flex; gap: 8px; }
+#impactCaption {
+  position: fixed; left: 50%; top: 18%; z-index: 19; transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px)); padding: 8px 16px; border-radius: 10px;
+  background: rgba(3, 5, 10, 0.55); color: var(--text); font-size: 15px; font-weight: 300; text-align: center;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
+  opacity: 0; transition: opacity 0.8s ease; pointer-events: none;
+}
+#impactCaption.show { opacity: 1; }
+@media (max-width: 700px) {
+  #impactCard { left: 16px; right: 16px; top: 16px; bottom: auto; width: auto; max-height: 45vh; }
+}
+/* ---------- end Famous impacts ---------- */
+
+/* ---------- Compass, location and clock ---------- */
+#compass {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.95);
+  transition: opacity 0.3s;
+}
+#compassTape {
+  display: block;
+  width: 100%;
+  height: 30px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.compass-read { margin-top: 2px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.compass-clock { margin-top: 1px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+body.zen #compass { opacity: 0; }
+@media (max-width: 1100px) {
+  #compass { top: auto; bottom: 64px; left: 24px; transform: none; width: 220px; text-align: left; }
+}
+
+.field {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.field.wide { width: 100%; }
+select.field option, select.field optgroup { background: #0d1220; color: var(--text); }
+.rate-row.coords { flex-wrap: wrap; gap: 6px 10px; }
+.rate-row.coords label { display: flex; align-items: center; gap: 5px; }
+.rate-row.coords input { width: 82px; }
+.rate-row .chip { padding: 6px 12px; }
+input.tod { margin-top: 10px; }
+.speeds button { flex: 1 0 22%; }
+
+@media (max-width: 700px) {
+  #compass { top: 136px; bottom: auto; left: 16px; width: 200px; }
+}

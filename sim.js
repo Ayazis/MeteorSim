@@ -13,8 +13,7 @@
   const MAX_RANGE = Math.sqrt((RE + HM) ** 2 - RE ** 2); // ~1133 km, distance to a meteor on the horizon
   const EXT_K = 0.25;     // mag of atmospheric extinction per airmass
   const REF_LM = 6.5;     // the rate is defined for a pristine sky
-  const LAT = 45 * DEG;   // observer latitude for the real sky
-  const SIDEREAL = TAU / 86164.1; // sky rotation, rad per second
+  let LAT = 45 * DEG;     // observer latitude (radians); set by the location control
   const DOME_AZ = 245 * DEG;      // direction of the nearest town's light dome
 
   const SHOWERS = {
@@ -44,6 +43,40 @@
     leonids: [152, 22], perseids: [48, 58], geminids: [112, 33], quadrantids: [230, 49],
     lyrids: [271, 34], etaAquariids: [338, -1], orionids: [95, 16], draconids: [262, 54],
   };
+
+  // Peak dates [month, day] of each shower. Evening showers are best the evening of that date,
+  // the rest in the pre-dawn hours of it.
+  const PEAKS = {
+    leonids: [11, 17], perseids: [8, 12], geminids: [12, 14], quadrantids: [1, 3], lyrids: [4, 22],
+    etaAquariids: [5, 6], orionids: [10, 21], draconids: [10, 8, 'evening'],
+  };
+  // The dates of historic outbursts, used by the scenarios of the same name.
+  const HIST_DATES = {
+    'Draconids 2011': [2011, 10, 8], 'Leonids 1999': [1999, 11, 18], 'Leonids 2001': [2001, 11, 18],
+    'Draconids 1933': [1933, 10, 9], 'Leonids 1833': [1833, 11, 13], 'Leonids 1966': [1966, 11, 17],
+  };
+
+  // Observing sites. tz is the standard-time offset from UTC in hours (daylight saving is ignored),
+  // bortle the typical sky there.
+  const SITES = [
+    { name: 'Dark countryside, 45° N', lat: 45.0, lon: 7.5, tz: 1, bortle: 2 },
+    { group: 'Dark-sky sites' },
+    { name: 'Atacama Desert, Chile', lat: -24.63, lon: -70.40, tz: -4, bortle: 1 },
+    { name: 'Mauna Kea, Hawaii', lat: 19.82, lon: -155.47, tz: -10, bortle: 1 },
+    { name: 'La Palma, Canary Islands', lat: 28.76, lon: -17.89, tz: 0, bortle: 1 },
+    { name: 'NamibRand, Namibia', lat: -24.95, lon: 16.00, tz: 2, bortle: 1 },
+    { name: 'Aoraki Mackenzie, New Zealand', lat: -43.99, lon: 170.46, tz: 12, bortle: 1 },
+    { name: 'Death Valley, California', lat: 36.46, lon: -116.87, tz: -8, bortle: 1.5 },
+    { name: 'Yellowknife, Canada', lat: 62.45, lon: -114.37, tz: -7, bortle: 3 },
+    { name: 'Tromsø, Norway', lat: 69.65, lon: 18.96, tz: 1, bortle: 4 },
+    { group: 'Cities' },
+    { name: 'Reykjavík, Iceland', lat: 64.15, lon: -21.94, tz: 0, bortle: 6 },
+    { name: 'Amsterdam, Netherlands', lat: 52.37, lon: 4.90, tz: 1, bortle: 8 },
+    { name: 'New York, USA', lat: 40.71, lon: -74.01, tz: -5, bortle: 9 },
+    { name: 'Cape Town, South Africa', lat: -33.92, lon: 18.42, tz: 2, bortle: 7 },
+    { name: 'Sydney, Australia', lat: -33.87, lon: 151.21, tz: 10, bortle: 8 },
+    { name: 'Tokyo, Japan', lat: 35.68, lon: 139.69, tz: 9, bortle: 9 },
+  ];
 
   // Rates are what a dark-adapted observer would see over the whole sky under a pristine sky,
   // close to the shower's ZHR. A scenario with `lm` also sets the sky darkness.
@@ -133,18 +166,118 @@
     const dec = Math.asin(clamp(sl * v[2] + cl * v[1], -1, 1));
     return [lst - Math.atan2(-v[0], cl * v[2] - sl * v[1]), dec];
   }
-  // Sidereal time that puts a radiant at altitude `alt`, rising (east) or setting (west).
-  function lstFor(ra, dec, alt, east) {
-    const c = (Math.sin(alt) - Math.sin(LAT) * Math.sin(dec)) / (Math.cos(LAT) * Math.cos(dec));
-    const h = Math.acos(clamp(c, -1, 1));
-    return ra + (east ? -h : h);
+  // ---- time, the Sun and the Moon
+  const jdOf = ms => ms / 86400000 + 2440587.5;
+  // Greenwich mean sidereal time (IAU 1982, as in Meeus ch. 12), radians.
+  function gmst(ms) {
+    const d = jdOf(ms) - 2451545, T = d / 36525;
+    const g = 280.46061837 + 360.98564736629 * d + 0.000387933 * T * T - T * T * T / 38710000;
+    return (((g % 360) + 360) % 360) * DEG;
   }
+  function eclToEq(lam, bet, eps) {
+    const sl = Math.sin(lam), cl = Math.cos(lam), sb = Math.sin(bet), cb = Math.cos(bet), se = Math.sin(eps), ce = Math.cos(eps);
+    return [Math.atan2(sl * cb * ce - sb * se, cl * cb), Math.asin(clamp(sb * ce + cb * se * sl, -1, 1))];
+  }
+  // Low-precision Sun (Astronomical Almanac, ~0.01°).
+  function sunPos(ms) {
+    const n = jdOf(ms) - 2451545;
+    const L = 280.460 + 0.9856474 * n, g = (357.528 + 0.9856003 * n) * DEG;
+    const lam = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * DEG;
+    const [ra, dec] = eclToEq(lam, 0, (23.439 - 0.0000004 * n) * DEG);
+    return { ra, dec, lam };
+  }
+  // Low-precision Moon (Astronomical Almanac, ~0.3°), with its horizontal parallax and phase.
+  function moonPos(ms, sunLam) {
+    const T = (jdOf(ms) - 2451545) / 36525;
+    const s = (a, b) => Math.sin((a + b * T) * DEG), c = (a, b) => Math.cos((a + b * T) * DEG);
+    const lam = (218.32 + 481267.881 * T + 6.29 * s(135.0, 477198.87) - 1.27 * s(259.3, -413335.36)
+      + 0.66 * s(235.7, 890534.22) + 0.21 * s(269.9, 954397.74) - 0.19 * s(357.5, 35999.05)
+      - 0.11 * s(186.5, 966404.03)) * DEG;
+    const bet = (5.13 * s(93.3, 483202.02) + 0.28 * s(228.2, 960400.89) - 0.28 * s(318.3, 6003.15)
+      - 0.17 * s(217.6, -407332.21)) * DEG;
+    const par = (0.9508 + 0.0518 * c(134.9, 477198.87) + 0.0095 * c(259.2, -413335.38)
+      + 0.0078 * c(235.7, 890534.23) + 0.0028 * c(269.9, 954397.70)) * DEG;
+    const [ra, dec] = eclToEq(lam, bet, 23.439 * DEG);
+    const elong = Math.acos(clamp(Math.cos(bet) * Math.cos(lam - sunLam), -1, 1));
+    return { ra, dec, par, illum: (1 - Math.cos(elong)) / 2,
+      waxing: ((((lam - sunLam) % TAU) + TAU) % TAU) < Math.PI };
+  }
+
+  // ---- sky brightness. SQM in mag/arcsec²; B in units of a 22.0 mag/arcsec² sky.
+  // Naked-eye limiting magnitude from sky brightness (a common fit to Schaefer's model).
+  const sqmToLm = q => 7.93 - 5 * Math.log10(Math.pow(10, 4.316 - q / 5) + 1);
+  const lmToSqm = lm => 5 * (4.316 - Math.log10(Math.max(1e-6, Math.pow(10, (7.93 - lm) / 5) - 1)));
+  const sqmToB = q => Math.pow(10, -0.4 * (q - 22));
+  // Bortle class -> typical zenith SQM.
+  const BORTLE_SQM = [22.0, 21.8, 21.5, 20.9, 20.0, 19.3, 18.7, 18.0, 17.2];
+  const BORTLE_NAMES = ['Excellent dark site', 'Truly dark site', 'Rural sky', 'Rural/suburban transition',
+    'Suburban sky', 'Bright suburban sky', 'Suburban/urban transition', 'City sky', 'Inner-city sky'];
+  function bortleToSqm(b) {
+    const x = clamp(b, 1, 9) - 1, i = Math.min(7, Math.floor(x));
+    return lerp(BORTLE_SQM[i], BORTLE_SQM[i + 1], x - i);
+  }
+  function sqmToBortle(q) {
+    if (q >= BORTLE_SQM[0]) return 1;
+    for (let i = 0; i < 8; i++) {
+      if (q >= BORTLE_SQM[i + 1]) return 1 + i + (BORTLE_SQM[i] - q) / (BORTLE_SQM[i] - BORTLE_SQM[i + 1]);
+    }
+    return 9;
+  }
+  const bortleToLm = b => sqmToLm(bortleToSqm(b));
+  const lmToBortle = lm => sqmToBortle(lmToSqm(lm));
+  // Zenith sky brightness from the Sun at altitude h (degrees), through twilight into day.
+  const SUN_H = [-90, -18, -15, -12, -9, -6, -3, 0, 5, 15, 90];
+  const SUN_Q = [40, 23.6, 21.4, 18.9, 16.1, 13.1, 10.4, 7.9, 6.2, 4.8, 4.0];
+  function interp(xs, ys, x) {
+    if (x <= xs[0]) return ys[0];
+    for (let i = 1; i < xs.length; i++) if (x <= xs[i]) return lerp(ys[i - 1], ys[i], (x - xs[i - 1]) / (xs[i] - xs[i - 1]));
+    return ys[ys.length - 1];
+  }
+  // Twilight and day sky colours (sRGB) by solar altitude: zenith and horizon.
+  const TW_H = [-18, -12, -8, -4, -1, 3, 10, 25];
+  const TW_ZEN = [[0, 0, 0], [6, 11, 26], [16, 30, 66], [34, 62, 118], [52, 92, 158], [64, 112, 186], [70, 124, 204], [66, 124, 214]];
+  const TW_HOR = [[0, 0, 0], [16, 22, 42], [52, 54, 82], [150, 104, 92], [214, 142, 96], [222, 182, 150], [178, 200, 224], [172, 204, 236]];
 
   // ------------------------------------------------------------------ state
   const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true, guide: false };
-  let lst0 = 0;              // sidereal time at simT = 0
+  S.tent = true; S.cardinals = true;
   let radRa = 0, radDec = 0; // the radiant, fixed among the stars
   let radVec = [0, 0, 1];
+  let radFactor = 1;         // sin(radiant altitude): the share of the ZHR you can see
+
+  // Observer and clock. clockMs is the simulated UTC time; it runs at the chosen speed.
+  const OBS = { name: SITES[0].name, lat: SITES[0].lat, lon: SITES[0].lon, tz: SITES[0].tz };
+  LAT = OBS.lat * DEG;
+  let clockMs = Date.now();
+  const lstNow = () => gmst(clockMs) + OBS.lon * DEG;
+  // Sun, Moon and the light they add, refreshed every frame by updateLight().
+  let sunVec = [0, 0, -1], moonVec = [0, 0, -1], moon = { illum: 0, waxing: true };
+  let sunAltDeg = -90, moonAltDeg = -90;
+  let lmNow = S.lm;          // limiting magnitude now: light pollution plus twilight and moonlight
+  let sqmNow = 21.7, dayF = 0, lightKey = '';
+
+  function updateLight() {
+    const lst = lstNow();
+    const sp = sunPos(clockMs);
+    sunVec = eqToHor(sp.ra, sp.dec, lst);
+    const mp = moonPos(clockMs, sp.lam);
+    let mv = eqToHor(mp.ra, mp.dec, lst);
+    const malt = Math.asin(clamp(mv[2], -1, 1)) - mp.par * Math.sqrt(Math.max(0, 1 - mv[2] * mv[2])); // topocentric
+    moonVec = dir(azOf(mv), malt);
+    moon = mp;
+    sunAltDeg = Math.asin(clamp(sunVec[2], -1, 1)) / DEG;
+    moonAltDeg = malt / DEG;
+    let B = sqmToB(lmToSqm(S.lm)) + sqmToB(interp(SUN_H, SUN_Q, sunAltDeg));
+    if (moonAltDeg > -1) {
+      B += sqmToB(18.7) * mp.illum ** 3 * smooth(-1, 8, moonAltDeg) * (0.4 + 0.6 * Math.max(0, moonVec[2]));
+    }
+    sqmNow = 22 - 2.5 * Math.log10(B);
+    lmNow = Math.min(S.lm, sqmToLm(sqmNow));
+    dayF = smooth(-18, 4, sunAltDeg);
+    // redraw the cached layers when the light has changed visibly
+    const key = `${lmNow.toFixed(2)}|${dayF.toFixed(3)}|${(mp.illum * smooth(-1, 8, moonAltDeg)).toFixed(2)}`;
+    if (key !== lightKey) { lightKey = key; skyDirty = true; }
+  }
 
   const cam = { yaw: 108 * DEG, pitch: 24 * DEG, fov: 100 * DEG };
   let W = 0, H = 0, DPR = 1, focal = 1;
@@ -187,6 +320,51 @@
     focal = (Math.max(W, H) / 2) / Math.tan(cam.fov / 2);
     skyDirty = true;
     lastCamMove = performance.now();
+    drawCompass();
+  }
+
+  // ---- compass: a heading tape in the HUD
+  const compassCv = document.getElementById('compassTape');
+  const compassRead = document.getElementById('compassRead');
+  const POINTS16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const pointName = azDeg => POINTS16[Math.round((((azDeg % 360) + 360) % 360) / 22.5) % 16];
+  function drawCompass() {
+    if (!compassCv) return;
+    const cw = compassCv.clientWidth || 280, chh = compassCv.clientHeight || 30;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (compassCv.width !== Math.round(cw * dpr)) { compassCv.width = Math.round(cw * dpr); compassCv.height = Math.round(chh * dpr); }
+    const c = compassCv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, cw, chh);
+    const yawD = cam.yaw / DEG, span = 50, pxd = cw / (2 * span);   // ±50° of heading across the tape
+    c.textAlign = 'center';
+    for (let a = Math.ceil((yawD - span) / 5) * 5; a <= yawD + span; a += 5) {
+      const x = cw / 2 + (a - yawD) * pxd;
+      const fadeEdge = 1 - Math.abs(a - yawD) / span;
+      const n = ((a % 360) + 360) % 360;
+      const major = n % 45 === 0, mid15 = n % 15 === 0;
+      c.globalAlpha = Math.max(0, fadeEdge) ** 0.6;
+      c.strokeStyle = major ? 'rgba(227,233,243,0.85)' : 'rgba(143,155,177,0.6)';
+      c.lineWidth = 1;
+      c.beginPath(); c.moveTo(x + 0.5, chh - 1); c.lineTo(x + 0.5, chh - (major ? 9 : mid15 ? 6 : 3.5)); c.stroke();
+      if (major) {
+        const name = POINTS16[n / 22.5];
+        c.font = `${name.length === 1 ? 600 : 500} ${name.length === 1 ? 12.5 : 11}px Inter, system-ui, sans-serif`;
+        c.fillStyle = n === 0 ? '#9bd7ff' : 'rgba(227,233,243,0.9)';
+        c.fillText(name, x, chh - 13);
+      } else if (mid15) {
+        c.font = '400 9.5px Inter, system-ui, sans-serif';
+        c.fillStyle = 'rgba(143,155,177,0.8)';
+        c.fillText(String(n), x, chh - 13);
+      }
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = '#9bd7ff';
+    c.beginPath(); c.moveTo(cw / 2 - 4, 0); c.lineTo(cw / 2 + 4, 0); c.lineTo(cw / 2, 5); c.closePath(); c.fill();
+    if (compassRead) {
+      const az = Math.round(yawD) % 360, alt = Math.round(cam.pitch / DEG);
+      compassRead.textContent = `${az}° ${pointName(yawD)} · ${alt}° up`;
+    }
   }
 
   // Rectilinear (gnomonic) projection: great circles, and so meteor paths, are straight lines.
@@ -352,14 +530,29 @@
   // ------------------------------------------------------------------ cached layers
   function skyColors() {
     const t = clamp((6.6 - S.lm) / 3.4, 0, 1);
+    // Twilight, daylight and moonlight add to the night sky (added as light, in linear space).
+    const twZ = toLinear(interpRgb(TW_ZEN, sunAltDeg)), twH = toLinear(interpRgb(TW_HOR, sunAltDeg));
+    const mb = moon.illum ** 3 * smooth(-1, 10, moonAltDeg);
+    const add = (night, tw, moonLin) => fromLinear(toLinear(night).map((x, i) => x + tw[i] + moonLin[i] * mb));
     return {
-      t,
-      zen: mix([3, 5, 11], [26, 25, 36], t),
-      hor: mix([12, 16, 26], [62, 50, 44], t),
-      dome: mix([0, 0, 0], [120, 84, 52], t),
-      ground: mix([2, 3, 5], [10, 9, 10], t),
+      t, day: dayF,
+      zen: add(mix([3, 5, 11], [26, 25, 36], t), twZ, [0.006, 0.010, 0.022]),
+      hor: add(mix([12, 16, 26], [62, 50, 44], t), twH, [0.009, 0.012, 0.020]),
+      dome: mix([0, 0, 0], [120, 84, 52], t * (1 - dayF)),
+      ground: mix(mix([2, 3, 5], [10, 9, 10], t), [44, 50, 40], dayF ** 1.5 * 0.9 + mb * 0.06),
     };
   }
+  function interpRgb(cols, h) {
+    if (h <= TW_H[0]) return cols[0];
+    for (let i = 1; i < TW_H.length; i++) {
+      if (h <= TW_H[i]) {
+        const f = (h - TW_H[i - 1]) / (TW_H[i] - TW_H[i - 1]);
+        return toLinear(cols[i - 1]).map((x, k) => x + (toLinear(cols[i])[k] - x) * f).map(x => Math.pow(x, 1 / 2.2) * 255);
+      }
+    }
+    return cols[cols.length - 1];
+  }
+  const fromLinear = c => c.map(x => Math.min(255, Math.pow(Math.max(0, x), 1 / 2.2) * 255));
 
   function renderBg(quick) {
     const c = bgx;
@@ -388,7 +581,7 @@
     c.fillRect(0, 0, W, H);
 
     c.globalCompositeOperation = 'lighter';
-    const mwVis = clamp((S.lm - 4.6) / 1.6, 0, 1);
+    const mwVis = clamp((lmNow - 4.6) / 1.6, 0, 1);
     if (mwVis > 0) {
       // While the view is moving, draw only the cheap smooth layer (brightened to make up for the grain).
       const layers = quick ? [[mwGlow, 6.5, 0.026]] : [[mwGlow, 6.5, 0.022], [mw, 1.1, 0.02]];
@@ -403,10 +596,10 @@
       }
     }
     for (const s of faintStars) {
-      if (s.mEff > S.lm) continue;
+      if (s.mEff > lmNow) continue;
       const p = project(s.v);
       if (!p || !onScreen(p, 2)) continue;
-      const vis = S.lm - s.mEff;
+      const vis = lmNow - s.mEff;
       const r = 0.5 + Math.max(0, 4 - s.mEff) * 0.28;
       c.globalAlpha = Math.min(1, 0.18 + vis * 0.24);
       c.fillStyle = s.css;
@@ -420,8 +613,8 @@
 
   function drawComet(c, quick) {
     // A bright sky drowns the faint outer tail first, then the rest.
-    const dark = clamp((S.lm - 2.8) / 3.7, 0, 1);
-    const fade = (6.8 - S.lm) * 1.1;
+    const dark = clamp((lmNow - 2.8) / 3.7, 0, 1);
+    const fade = (6.8 - lmNow) * 1.1;
     const pxPerDeg = focal * DEG;
     for (let i = 0; i < comet.pts.length; i += quick ? 2 : 1) {
       const q = comet.pts[i];
@@ -500,7 +693,86 @@
     fillLayer(c, far, rgb(mix(haze, col.ground, 0.6)));
     fillLayer(c, mid, rgb(mix(haze, col.ground, 0.83)));
     fillLayer(c, near, rgb(col.ground));
-    drawTent(c, col);
+    if (S.tent) drawTent(c, col);
+  }
+
+  // Faint compass points on the horizon, just above the landscape.
+  function drawCardinals() {
+    if (!S.cardinals) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    const a0 = 0.32 + 0.3 * dayF;
+    for (let i = 0; i < 8; i++) {
+      const az = i * 45 * DEG, major = i % 2 === 0;
+      const p = project(dir(az, (terrainAt(az) + (major ? 1.6 : 1.3)) * DEG));
+      if (!p || !onScreen(p, 20)) continue;
+      ctx.font = `${major ? 600 : 500} ${major ? 13 : 11}px Inter, system-ui, sans-serif`;
+      ctx.fillStyle = i === 0 ? `rgba(155,215,255,${a0 + 0.15})` : `rgba(210,222,240,${a0})`;
+      ctx.fillText(POINTS16[i * 2], p[0], p[1]);
+    }
+    ctx.restore();
+  }
+
+  // The Sun and the Moon, with the Moon's phase and its bright limb turned toward the Sun.
+  function drawSunMoon() {
+    const pxPerDeg = focal * DEG;
+    if (moonVec[2] > -0.02) {
+      const p = project(moonVec);
+      if (p && onScreen(p, 60)) {
+        const x = p[0], y = p[1], r = Math.max(2.2, 0.259 * pxPerDeg);
+        // screen direction toward the Sun along the great circle
+        const c = dot(sunVec, moonVec);
+        const tv = norm([sunVec[0] - moonVec[0] * c, sunVec[1] - moonVec[1] * c, sunVec[2] - moonVec[2] * c]);
+        const q = project(norm([moonVec[0] + tv[0] * 0.01, moonVec[1] + tv[1] * 0.01, moonVec[2] + tv[2] * 0.01]));
+        const ang = q ? Math.atan2(q[1] - y, q[0] - x) : 0;
+        const k = moon.illum;
+        const night = 1 - 0.6 * dayF;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = r * (6 + 10 * k);
+        ctx.globalAlpha = (0.08 + 0.4 * k * k) * night;
+        ctx.drawImage(glow, x - g, y - g, g * 2, g * 2);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.translate(x, y); ctx.rotate(ang);
+        // earthshine on the dark part
+        ctx.globalAlpha = 0.16 * (1 - dayF);
+        ctx.fillStyle = 'rgb(70,80,100)';
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+        const e = (2 * k - 1) * r;
+        ctx.globalAlpha = 0.97;
+        ctx.fillStyle = dayF > 0.5 ? 'rgb(236,240,248)' : 'rgb(250,246,232)';
+        ctx.beginPath();
+        ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+        ctx.ellipse(0, 0, Math.max(0.01, Math.abs(e)), r, 0, Math.PI / 2, e >= 0 ? 1.5 * Math.PI : -Math.PI / 2, e < 0);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    if (sunVec[2] > -0.02) {
+      const p = project(sunVec);
+      if (p && onScreen(p, 200)) {
+        const x = p[0], y = p[1], r = Math.max(3, 0.267 * pxPerDeg);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (const [s, a] of [[40, 0.18], [12, 0.45], [4, 0.9]]) {
+          ctx.globalAlpha = a; ctx.drawImage(glow, x - r * s, y - r * s, r * s * 2, r * s * 2);
+        }
+        ctx.globalAlpha = 1; ctx.fillStyle = 'rgb(255,250,236)';
+        ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  // Add-on layers (see the MeteorSim API at the end): drawn over the sky, behind meteors and landscape.
+  const layers = [];
+  function drawLayers(dt) {
+    for (const fn of layers) {
+      ctx.save();
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      try { fn(ctx, dt, API); } catch (err) { console.warn('MeteorSim layer failed', err); }
+      ctx.restore();
+    }
   }
 
   // ------------------------------------------------------------------ meteors
@@ -510,7 +782,6 @@
 
   const resetSpawn = () => { nextSpawn = simT + expRand(S.rate); };
   const resetSeen = () => { seen = []; seenStart = simT; };
-  const lstNow = () => lst0 + simT * SIDEREAL;
 
   function sampleMag(r) {
     // N(<=m) grows by a factor r per magnitude, up to the naked-eye limit
@@ -568,7 +839,7 @@
       });
 
       // Did it land in the view, above the trees, bright enough for this sky?
-      if (mEff <= S.lm && alt > terrainAt(azOf(P)) * DEG) {
+      if (mEff <= lmNow && alt > terrainAt(azOf(P)) * DEG) {
         const p = project(P);
         if (p && onScreen(p)) {
           seen.push(simT); totalSeen++;
@@ -615,15 +886,15 @@
       M.age += dt;
       const p = M.age / M.dur;
       if (p >= 1) {
-        if (M.train && M.m <= S.lm) makeTrain(M);
+        if (M.train && M.m <= lmNow) makeTrain(M);
         meteors[i] = meteors[meteors.length - 1]; meteors.pop();
         continue;
       }
-      if (M.m > S.lm + 0.3) continue;
+      if (M.m > lmNow + 0.3) continue;
       const I = lightCurve(p, M);
       if (I < 0.005) continue;
       const mNow = M.m - 2.5 * Math.log10(I);
-      const vis = S.lm - mNow;
+      const vis = lmNow - mNow;
       if (vis < -0.3) continue;
       // A monitor can't match a dark-adapted eye, so faint meteors get a floor of visibility.
       const a = clamp(0.5 + vis * 0.2, 0, 1);
@@ -685,7 +956,7 @@
   function drawTrains(dt) {
     const ctx = mx;
     const sc = focal / 900;
-    const dark = clamp((S.lm - 3) / 3.5, 0.15, 1);
+    const dark = clamp((lmNow - 3) / 3.5, 0.15, 1);
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     for (let i = trains.length - 1; i >= 0; i--) {
       const T = trains[i];
@@ -712,12 +983,12 @@
 
   function drawBrightStars(t) {
     for (const s of brightStars) {
-      if (s.mEff > S.lm) continue;
+      if (s.mEff > lmNow) continue;
       const p = project(s.v);
       if (!p || !onScreen(p, 10)) continue;
       const amp = 0.06 + 0.16 * Math.min(1, (s.am - 1) / 3);   // twinkles more low down
       const tw = 1 + amp * 0.5 * (Math.sin(t * s.f + s.ph) + Math.sin(t * s.f2 + s.ph * 2));
-      const vis = S.lm - s.mEff;
+      const vis = lmNow - s.mEff;
       const a = clamp(0.3 + vis * 0.2, 0, 1) * tw;
       const r = 0.6 + Math.max(0, 4 - s.mEff) * 0.3;
       ctx.globalAlpha = Math.min(1, a);
@@ -747,6 +1018,7 @@
     ctx.fillText(`${SHOWERS[S.shower].name} radiant`, x, y - 24);
     ctx.restore();
   }
+
 
   // ---- Sky guide: names of stars, star systems, deep-sky objects and constellations
   const INFO = window.SKY_INFO || { stars: [], deep: [], constellations: [] };
@@ -868,11 +1140,19 @@
       exposure: 1.7,
       starBoost: 2.2,
       // the faint end of the map sinks into a brighter sky
-      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * (REF_LM - S.lm)) - 1)),
+      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * (REF_LM - lmNow)) - 1)),
       pollution: col.t,
       domeAz: DOME_AZ,
       zen: toLinear(col.zen), hor: toLinear(col.hor), dome: toLinear(col.dome), ground: toLinear(col.ground),
+      sunDir: sunVec, sunCol: sunGlowColor(), moonDir: moonVec,
+      moonCol: [0.016, 0.019, 0.026].map(x => x * moon.illum ** 3 * smooth(-1, 6, moonAltDeg)),
     });
+  }
+  // The glow around the Sun: warm and strong when it is low, through twilight into day.
+  function sunGlowColor() {
+    const s = smooth(-18, -3, sunAltDeg) * 0.55 + smooth(-3, 20, sunAltDeg) * 0.45;
+    const warm = 1 - smooth(-2, 25, sunAltDeg);
+    return mix([0.55, 0.62, 0.75], [1.0, 0.5, 0.2], warm).map(x => x * s * 0.35);
   }
 
   // ------------------------------------------------------------------ loop
@@ -886,14 +1166,20 @@
   function render(now) {
     const dtReal = Math.min(0.1, (now - last) / 1000);
     last = now; realT += dtReal;
-    const dt = dtReal * S.timeScale;
+    // The clock and sky run at the chosen speed. Meteors never run faster than real time:
+    // they last a fraction of a second, so fast-forward speeds up only the turning sky.
+    const dt = dtReal * Math.min(1, S.timeScale);
+    if (S.timeScale > 0) clockMs += dtReal * S.timeScale * 1000;
+    updateLight();
+    if (S.shower !== 'sporadic') radVec = eqToHor(radRa, radDec, lstNow());
+    radFactor = S.shower === 'sporadic' ? 1 : Math.max(0, radVec[2]);
 
     if (dt > 0) {
       simT += dt;
       let n = 0;
-      while (nextSpawn <= simT && n < 3000) { spawnOne(); nextSpawn += expRand(S.rate); n++; }
+      // A shower's rate scales with the sine of the radiant's altitude, as in the ZHR.
+      while (nextSpawn <= simT && n < 3000) { if (Math.random() < radFactor) spawnOne(); nextSpawn += expRand(S.rate); n++; }
       if (n >= 3000) resetSpawn();
-      if (S.shower !== 'sporadic') radVec = eqToHor(radRa, radDec, lstNow());
     }
     const real = !!(sky && skyReady);
     if (skyDirty) {
@@ -917,6 +1203,9 @@
       ctx.globalCompositeOperation = 'lighter';
       drawBrightStars(realT);
     }
+    ctx.globalCompositeOperation = 'source-over';
+    drawSunMoon();
+    drawLayers(dt);
 
     mx.setTransform(1, 0, 0, 1, 0, 0);
     mx.clearRect(0, 0, ml.width, ml.height);
@@ -937,10 +1226,11 @@
       ctx.fillRect(0, 0, W, H);
       ctx.globalCompositeOperation = 'source-over';
     }
+    drawCardinals();
     drawRadiant();
     drawGuide();
 
-    if (now - lastHud > 250) { updateHud(); lastHud = now; }
+    if (now - lastHud > 250) { updateHud(); refreshClockUi(); lastHud = now; }
   }
 
   // ------------------------------------------------------------------ UI
@@ -950,8 +1240,11 @@
     hudBig: $('hudBig'), hudUnit: $('hudUnit'), hudSub: $('hudSub'), hudSeen: $('hudSeen'),
     rate: $('rate'), rateNum: $('rateNum'), rateOut: $('rateOut'), compare: $('compare'),
     presets: $('presets'), presetNote: $('presetNote'), showerSeg: $('showerSeg'), showerNote: $('showerNote'),
-    lm: $('lm'), lmOut: $('lmOut'), fov: $('fov'), fovOut: $('fovOut'),
+    lm: $('lm'), lmOut: $('lmOut'), lmNote: $('lmNote'), fov: $('fov'), fovOut: $('fovOut'),
     timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'), showComet: $('showComet'), showGuide: $('showGuide'),
+    site: $('site'), lat: $('lat'), lon: $('lon'), geo: $('geo'), locOut: $('locOut'), siteNote: $('siteNote'),
+    date: $('date'), tod: $('tod'), todOut: $('todOut'), now: $('nowBtn'), sunNote: $('sunNote'), hudClock: $('hudClock'),
+    showTent: $('showTent'), showCardinals: $('showCardinals'),
     stSeen: $('stSeen'), stFire: $('stFire'), stNow: $('stNow'), stTime: $('stTime'),
   };
 
@@ -984,8 +1277,11 @@
   const rateToSlider = r => Math.round(((Math.log10(r) + 3) / 6) * 1000);
 
   function lmLabel(lm) {
-    const name = lm >= 6.3 ? 'Pristine' : lm >= 5.7 ? 'Rural' : lm >= 4.8 ? 'Suburban' : lm >= 4 ? 'Bright suburb' : 'City';
-    return `${name} · mag ${lm.toFixed(1)}`;
+    const b = lmToBortle(lm);
+    return `Bortle ${Math.round(b)} · ${BORTLE_NAMES[Math.round(b) - 1]}`;
+  }
+  function lmDetail(lm) {
+    return `Night sky about ${lmToSqm(lm).toFixed(2)} mag/arcsec² (SQM). Stars to magnitude ${lm.toFixed(1)} at the zenith.`;
   }
 
   function refreshRateUi() {
@@ -1017,16 +1313,62 @@
     updateHud();
   }
 
-  function setShower(key) {
+  // ---- clock helpers, in the site's standard time
+  function localParts(ms) {
+    const d = new Date(ms + OBS.tz * 3600e3);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), min: d.getUTCHours() * 60 + d.getUTCMinutes() };
+  }
+  const fromLocal = (y, m, d, min) => {
+    const t = new Date(0); t.setUTCFullYear(y, m - 1, d); t.setUTCHours(0, 0, 0, 0);
+    return t.getTime() + min * 60e3 - OBS.tz * 3600e3;
+  };
+  const sunAltAt = ms => {
+    const sp = sunPos(ms);
+    return Math.asin(eqToHor(sp.ra, sp.dec, gmst(ms) + OBS.lon * DEG)[2]) / DEG;
+  };
+  // The best moment of the night ending on the morning of y-m-d (or the evening of it): dark,
+  // with the radiant as high as it gets. Usually the hours before dawn.
+  function bestTime(y, m, d, rd, evening) {
+    const start = fromLocal(y, m, d, evening ? 12 * 60 : -12 * 60);
+    let best = start + 12 * 3600e3, bs = -Infinity;
+    for (let i = 0; i <= 144; i++) {
+      const ms = start + i * 600e3, sAlt = sunAltAt(ms);
+      const dark = clamp((-sAlt - 4) / 14, 0, 1);
+      const r = rd ? Math.max(0, eqToHor(rd[0] * DEG, rd[1] * DEG, gmst(ms) + OBS.lon * DEG)[2]) : 0.5;
+      const score = dark * (r + 0.02) + 1e-4 * -sAlt + 1e-5 * r;
+      if (score > bs) { bs = score; best = ms; }
+    }
+    return best;
+  }
+  function jumpToNight(key, date) {
+    const pk = PEAKS[key];
+    let ymd = date;
+    if (!ymd && pk) ymd = [localParts(clockMs).y, pk[0], pk[1]];
+    if (!ymd) {   // no peak: tonight
+      const lp = localParts(clockMs + 12 * 3600e3);
+      ymd = [lp.y, lp.m, lp.d];
+    }
+    setClock(bestTime(ymd[0], ymd[1], ymd[2], RADIANTS[key], pk && pk[2] === 'evening'));
+  }
+  function setClock(ms) {
+    clockMs = ms;
+    updateLight();
+    if (S.shower !== 'sporadic') radVec = eqToHor(radRa, radDec, lstNow());
+    skyDirty = true;
+    resetSeen();
+    refreshClockUi();
+  }
+
+  function setShower(key, opts = {}) {
     S.shower = key;
     const sh = SHOWERS[key];
     const rd = RADIANTS[key];
     if (rd) {
-      // Turn the sky so the radiant stands where this shower is best seen.
+      // The radiant's real position among the stars: where it stands depends on the place and time.
       radRa = rd[0] * DEG; radDec = rd[1] * DEG;
-      lst0 = lstFor(radRa, radDec, sh.alt * DEG, sh.az < 180) - simT * SIDEREAL;
       radVec = eqToHor(radRa, radDec, lstNow());
     }
+    if (opts.jump !== false) jumpToNight(key, opts.date);
     for (const b of el.showerSeg.children) b.classList.toggle('active', b.dataset.s === key);
     el.showerNote.textContent = sh.note;
     resetSeen();
@@ -1041,7 +1383,13 @@
     const f = formatRate(S.rate);
     el.hudBig.textContent = f.big;
     el.hudUnit.textContent = f.unit;
-    el.hudSub.textContent = f.sub;
+    let sub = f.sub;
+    if (S.shower !== 'sporadic') {
+      const ra = Math.asin(clamp(radVec[2], -1, 1)) / DEG;
+      sub += ra > 0 ? ` · radiant ${Math.round(ra)}° up, ${Math.round(radFactor * 100)}% of the rate reaches you`
+        : ' · radiant below the horizon, so almost none now';
+    }
+    el.hudSub.textContent = sub;
     const win = S.rate >= 0.3 ? 10 : 600;
     let k = 0; while (k < seen.length && seen[k] < simT - win) k++;
     if (k) seen.splice(0, k);
@@ -1050,7 +1398,8 @@
     if (span < 1.5) text = 'Counting…';
     else if (!seen.length) text = `None in this view yet (${fmtDur(span)})`;
     else text = `You're seeing ${fmtShortRate(seen.length / span)} in this view`;
-    if (S.lm < REF_LM - 0.05) text += ' · light pollution hides the faint ones';
+    if (lmNow < S.lm - 0.3) text += sunAltDeg > -18 ? (sunAltDeg > -0.8 ? ' · daylight hides all but fireballs' : ' · twilight hides the faint ones') : ' · moonlight hides the faint ones';
+    else if (S.lm < REF_LM - 0.05) text += ' · light pollution hides the faint ones';
     el.hudSeen.textContent = text;
 
     el.stSeen.textContent = nf.format(totalSeen);
@@ -1073,7 +1422,7 @@
     b.innerHTML = `<b>${pr.label}</b><span>${pr.sub}</span>`;
     b.addEventListener('click', () => {
       if (pr.lm !== undefined) setLm(pr.lm);
-      setShower(pr.shower); setRate(pr.rate);
+      setShower(pr.shower, { date: HIST_DATES[pr.label] }); setRate(pr.rate);
     });
     el.presets.appendChild(b);
   });
@@ -1088,12 +1437,14 @@
   el.rateNum.addEventListener('input', () => { const v = parseFloat(el.rateNum.value); if (v > 0) setRate(v, 'num'); });
   el.rateNum.addEventListener('change', () => setRate(S.rate));
 
+  // The light-pollution slider is in Bortle classes; inside, it is the limiting magnitude S.lm.
   function setLm(lm, from) {
-    S.lm = lm; if (from !== 'slider') el.lm.value = lm;
-    el.lmOut.textContent = lmLabel(S.lm); skyDirty = true; resetSeen();
+    S.lm = clamp(lm, 2.5, 7.2); if (from !== 'slider') el.lm.value = lmToBortle(S.lm).toFixed(1);
+    el.lmOut.textContent = lmLabel(S.lm); el.lmNote.textContent = lmDetail(S.lm);
+    updateLight(); skyDirty = true; resetSeen();
     refreshRateUi();
   }
-  el.lm.addEventListener('input', () => setLm(+el.lm.value, 'slider'));
+  el.lm.addEventListener('input', () => setLm(bortleToLm(+el.lm.value), 'slider'));
   const syncFov = () => { el.fov.value = Math.round(cam.fov / DEG); el.fovOut.textContent = `${Math.round(cam.fov / DEG)}°`; };
   el.fov.addEventListener('input', () => { cam.fov = +el.fov.value * DEG; updateCam(); syncFov(); });
 
@@ -1103,6 +1454,86 @@
     S.timeScale = t; setSeg(el.timeSeg, 't', t);
   }
   el.timeSeg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTime(+b.dataset.t); });
+  // ---- date, time of day and place
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const p2 = n => String(n).padStart(2, '0');
+  const tzLabel = tz => `UTC${tz >= 0 ? '+' : '−'}${Math.abs(tz)}`;
+  function phaseName(k, waxing) {
+    if (k < 0.03) return 'New Moon';
+    if (k > 0.97) return 'Full Moon';
+    if (Math.abs(k - 0.5) < 0.06) return waxing ? 'First quarter' : 'Last quarter';
+    return `${waxing ? 'Waxing' : 'Waning'} ${k < 0.5 ? 'crescent' : 'gibbous'}`;
+  }
+  function refreshClockUi() {
+    if (!el.date) return;
+    const lp = localParts(clockMs);
+    const ds = `${String(lp.y).padStart(4, '0')}-${p2(lp.m)}-${p2(lp.d)}`;
+    if (document.activeElement !== el.date && el.date.value !== ds) el.date.value = ds;
+    if (document.activeElement !== el.tod) el.tod.value = lp.min;
+    const hm = `${p2(Math.floor(lp.min / 60))}:${p2(lp.min % 60)}`;
+    el.todOut.textContent = `${hm} ${tzLabel(OBS.tz)}`;
+    const phase = sunAltDeg >= -0.83 ? 'Daytime' : sunAltDeg > -6 ? 'Civil twilight' : sunAltDeg > -12 ? 'Nautical twilight'
+      : sunAltDeg > -18 ? 'Astronomical twilight' : 'Full night';
+    el.sunNote.textContent = `${phase}: Sun ${Math.round(sunAltDeg)}°. ${phaseName(moon.illum, moon.waxing)}, `
+      + `${Math.round(moon.illum * 100)}% lit, ${moonAltDeg > 0 ? `${Math.round(moonAltDeg)}° up` : 'below the horizon'}.`;
+    if (el.hudClock) el.hudClock.textContent = `${OBS.name} · ${lp.d} ${MONTHS[lp.m - 1]} ${lp.y}, ${hm}`;
+  }
+  el.date.addEventListener('change', () => {
+    const m = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(el.date.value);
+    if (m) setClock(fromLocal(+m[1], +m[2], +m[3], localParts(clockMs).min));
+  });
+  el.tod.addEventListener('input', () => {
+    const lp = localParts(clockMs);
+    setClock(fromLocal(lp.y, lp.m, lp.d, +el.tod.value));
+  });
+  el.now.addEventListener('click', () => setClock(Date.now()));
+
+  function setLocation(site, applyLm) {
+    const lp = localParts(clockMs);   // keep the same local clock time at the new place
+    OBS.name = site.name;
+    OBS.lat = clamp(site.lat, -90, 90);
+    OBS.lon = ((site.lon + 540) % 360) - 180;
+    OBS.tz = site.tz !== undefined ? site.tz : Math.round(OBS.lon / 15);
+    LAT = OBS.lat * DEG;
+    if (applyLm && site.bortle) setLm(bortleToLm(site.bortle));
+    el.lat.value = +OBS.lat.toFixed(2); el.lon.value = +OBS.lon.toFixed(2);
+    const ns = `${Math.abs(OBS.lat).toFixed(1)}° ${OBS.lat >= 0 ? 'N' : 'S'}`, ew = `${Math.abs(OBS.lon).toFixed(1)}° ${OBS.lon >= 0 ? 'E' : 'W'}`;
+    el.locOut.textContent = `${ns}, ${ew}`;
+    el.siteNote.textContent = `${site.name}. Clock in local standard time, ${tzLabel(OBS.tz)}.`;
+    setClock(fromLocal(lp.y, lp.m, lp.d, lp.min));
+  }
+  SITES.forEach((st, i) => {
+    if (st.group) {
+      const g = document.createElement('optgroup'); g.label = st.group; el.site.appendChild(g); return;
+    }
+    const o = document.createElement('option'); o.value = i; o.textContent = st.name;
+    (el.site.lastElementChild && el.site.lastElementChild.tagName === 'OPTGROUP' ? el.site.lastElementChild : el.site).appendChild(o);
+  });
+  const customOpt = document.createElement('option'); customOpt.value = 'custom'; customOpt.textContent = 'Custom position';
+  el.site.appendChild(customOpt);
+  el.site.addEventListener('change', () => { const st = SITES[+el.site.value]; if (st) setLocation(st, true); });
+  const fromInputs = () => {
+    const la = parseFloat(el.lat.value), lo = parseFloat(el.lon.value);
+    if (!isFinite(la) || !isFinite(lo)) return;
+    el.site.value = 'custom';
+    setLocation({ name: 'Custom position', lat: la, lon: lo }, false);
+  };
+  el.lat.addEventListener('change', fromInputs);
+  el.lon.addEventListener('change', fromInputs);
+  if (!navigator.geolocation) el.geo.hidden = true;
+  el.geo.addEventListener('click', () => {
+    el.geo.textContent = 'Locating…';
+    navigator.geolocation.getCurrentPosition(pos => {
+      el.geo.textContent = 'Use my location';
+      el.site.value = 'custom';
+      setLocation({ name: 'My location', lat: pos.coords.latitude, lon: pos.coords.longitude,
+        tz: -new Date().getTimezoneOffset() / 60 }, false);
+    }, () => { el.geo.textContent = 'Location unavailable'; setTimeout(() => { el.geo.textContent = 'Use my location'; }, 2500); },
+    { maximumAge: 600000, timeout: 15000 });
+  });
+  el.showTent.addEventListener('change', () => { S.tent = el.showTent.checked; skyDirty = true; });
+  el.showCardinals.addEventListener('change', () => { S.cardinals = el.showCardinals.checked; });
+
   el.modeSeg.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     S.mode = b.dataset.m; setSeg(el.modeSeg, 'm', S.mode); resetSeen();
@@ -1196,7 +1627,8 @@
   }, { passive: false });
 
   window.addEventListener('keydown', e => {
-    if (e.target instanceof HTMLInputElement && e.target.type === 'number') return;
+    if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'date')) return;
+    if (e.target instanceof HTMLSelectElement) return;
     const k = e.key.toLowerCase();
     dismissIntro();
     if (k === ' ') { e.preventDefault(); setTime(S.timeScale === 0 ? lastSpeed : 0); }
@@ -1217,14 +1649,63 @@
     project: v => { const p = project(v); return p && [p[0], p[1]]; }, arcPoint,
     get realSky() { return !!(sky && skyReady); }, get skyTexture() { return sky ? sky.textureSize : 0; } };
 
+  /* ------------------------------------------------------------------ window.MeteorSim
+   * A small API for add-on modules (an aurora layer, overlays...). Directions are unit vectors in
+   * horizon coordinates: x = east, y = north, z = up. Angles in radians unless named *Deg.
+   *
+   *   getObserver()   -> { name, lat, lon (degrees, east positive), tz (hours), date: Date (UTC instant),
+   *                        lst (local sidereal time, radians), sunAlt, sunAz, moonAlt, moonAz (degrees),
+   *                        moonIllum (0..1), sunDir, moonDir (vectors) }
+   *   getPollution()  -> { bortle (1..9), sqm (night sky from light pollution, mag/arcsec²),
+   *                        lm (limiting magnitude from light pollution alone), sqmNow, lmNow (including
+   *                        twilight and moonlight), t (0..1 light-pollution strength), day (0..1 daylight) }
+   *   getView()       -> { yaw (azimuth of view centre), pitch, fov, width, height (CSS px), focal (px/tan) }
+   *   eqToHor(ra, dec[, lst]) -> vector      horToEq(vec[, lst]) -> [ra, dec]
+   *   dir(az, alt) -> vector                 azAlt(vec) -> [az, alt]
+   *   project(vec) -> [x, y] in CSS px, or null if behind the camera     unproject(x, y) -> vector
+   *   projectAzAlt(azDeg, altDeg) -> [x, y] | null
+   *   terrainAlt(az) -> altitude of the landscape's skyline at that azimuth, degrees
+   *   addLayer(fn)    -> remove(). fn(ctx, dt, MeteorSim) runs every frame with the main 2D context
+   *                      (transform set to CSS pixels), after the sky, Sun and Moon and before the meteors
+   *                      and the landscape. dt is simulated seconds since the last frame (meteor clock).
+   *   setLocation({ name, lat, lon, tz }), setTime(Date | ms)
+   * A 'meteorsim-ready' event fires on window once this API exists.
+   */
+  const API = {
+    getObserver() {
+      return { name: OBS.name, lat: OBS.lat, lon: OBS.lon, tz: OBS.tz, date: new Date(clockMs), lst: lstNow(),
+        sunAlt: sunAltDeg, sunAz: (((azOf(sunVec) / DEG) % 360) + 360) % 360, moonAlt: moonAltDeg,
+        moonAz: (((azOf(moonVec) / DEG) % 360) + 360) % 360, moonIllum: moon.illum,
+        sunDir: sunVec.slice(), moonDir: moonVec.slice() };
+    },
+    getPollution() {
+      return { bortle: lmToBortle(S.lm), sqm: lmToSqm(S.lm), lm: S.lm, sqmNow, lmNow,
+        t: clamp((6.6 - S.lm) / 3.4, 0, 1), day: dayF };
+    },
+    getView: () => ({ yaw: cam.yaw, pitch: cam.pitch, fov: cam.fov, width: W, height: H, focal }),
+    eqToHor: (ra, dec, lst = lstNow()) => eqToHor(ra, dec, lst),
+    horToEq: (v, lst = lstNow()) => horToEq(v, lst),
+    dir, azAlt: v => [azOf(v), Math.asin(clamp(v[2], -1, 1))],
+    project: v => { const p = project(v); return p && [p[0], p[1]]; },
+    projectAzAlt: (azDeg, altDeg) => { const p = project(dir(azDeg * DEG, altDeg * DEG)); return p && [p[0], p[1]]; },
+    unproject: (x, y) => unproject(x, y),
+    terrainAlt: az => terrainAt(az),
+    addLayer(fn) { layers.push(fn); return () => { const i = layers.indexOf(fn); if (i >= 0) layers.splice(i, 1); }; },
+    setLocation: site => { el.site.value = 'custom'; setLocation({ name: 'Custom position', ...site }, false); },
+    setTime: t => setClock(+t),
+  };
+  window.MeteorSim = API;
+
   // ------------------------------------------------------------------ start
   if (window.innerWidth < 700) setPanel(false);
   resize();
-  el.lm.value = S.lm; el.lmOut.textContent = lmLabel(S.lm);
+  setLocation(SITES[0], false);
+  setLm(S.lm);
   syncFov();
   setTime(1);
   setSeg(el.modeSeg, 'm', S.mode);
   setShower(S.shower);
   setRate(S.rate);
   requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
+  window.dispatchEvent(new Event('meteorsim-ready'));
 })();
