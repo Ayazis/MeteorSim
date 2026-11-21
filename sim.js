@@ -13,6 +13,9 @@
   const MAX_RANGE = Math.sqrt((RE + HM) ** 2 - RE ** 2); // ~1133 km, distance to a meteor on the horizon
   const EXT_K = 0.25;     // mag of atmospheric extinction per airmass
   const REF_LM = 6.5;     // the rate is defined for a pristine sky
+  const LAT = 45 * DEG;   // observer latitude for the real sky
+  const SIDEREAL = TAU / 86164.1; // sky rotation, rad per second
+  const DOME_AZ = 245 * DEG;      // direction of the nearest town's light dome
 
   const SHOWERS = {
     leonids:  { name: 'Leonids',  v: 71, az: 105, alt: 52, r: 2.5, trainProb: 0.85,
@@ -33,6 +36,13 @@
       note: '20 km/s, one of the slowest showers, seen in the evening. Usually almost absent, but it has stormed when Earth crossed fresh dust from comet Giacobini–Zinner.' },
     sporadic: { name: 'Sporadic', v: 0,   az: 0,   alt: 0,  r: 3.0, trainProb: 0.3,
       note: 'Background meteors from random directions and at random speeds, with no radiant.' },
+  };
+
+  // Radiant positions on the sky at each shower's peak (J2000 RA, Dec in degrees). The real sky is
+  // turned so that each radiant stands at the az/alt given above.
+  const RADIANTS = {
+    leonids: [152, 22], perseids: [48, 58], geminids: [112, 33], quadrantids: [230, 49],
+    lyrids: [271, 34], etaAquariids: [338, -1], orionids: [95, 16], draconids: [262, 54],
   };
 
   // Rates are what a dark-adapted observer would see over the whole sky under a pristine sky,
@@ -109,21 +119,63 @@
     return Math.sqrt((RE + HM) ** 2 - (RE * Math.cos(alt)) ** 2) - RE * Math.sin(alt);
   }
   const expRand = rate => -Math.log(1 - Math.random()) / rate;
+  const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a.toFixed(3)})`;
+  const toLinear = c => c.map(x => Math.pow(x / 255, 2.2));
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+  // Equatorial (RA, Dec) <-> horizon direction, at latitude LAT and local sidereal time `lst`.
+  function eqToHor(ra, dec, lst) {
+    const h = lst - ra, sl = Math.sin(LAT), cl = Math.cos(LAT), sd = Math.sin(dec), cd = Math.cos(dec);
+    return norm([-cd * Math.sin(h), cl * sd - sl * cd * Math.cos(h), sl * sd + cl * cd * Math.cos(h)]);
+  }
+  function horToEq(v, lst) {
+    const sl = Math.sin(LAT), cl = Math.cos(LAT);
+    const dec = Math.asin(clamp(sl * v[2] + cl * v[1], -1, 1));
+    return [lst - Math.atan2(-v[0], cl * v[2] - sl * v[1]), dec];
+  }
+  // Sidereal time that puts a radiant at altitude `alt`, rising (east) or setting (west).
+  function lstFor(ra, dec, alt, east) {
+    const c = (Math.sin(alt) - Math.sin(LAT) * Math.sin(dec)) / (Math.cos(LAT) * Math.cos(dec));
+    const h = Math.acos(clamp(c, -1, 1));
+    return ra + (east ? -h : h);
+  }
 
   // ------------------------------------------------------------------ state
   const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true };
-  let radVec = dir(SHOWERS.leonids.az * DEG, SHOWERS.leonids.alt * DEG);
-  const setRadiant = (az, alt) => { radVec = dir(az, alt); };
+  let lst0 = 0;              // sidereal time at simT = 0
+  let radRa = 0, radDec = 0; // the radiant, fixed among the stars
+  let radVec = [0, 0, 1];
 
-  const cam = { yaw: 108 * DEG, pitch: 27 * DEG, fov: 100 * DEG };
+  const cam = { yaw: 108 * DEG, pitch: 24 * DEG, fov: 100 * DEG };
   let W = 0, H = 0, DPR = 1, focal = 1;
   let F = [0, 1, 0], R = [1, 0, 0], U = [0, 0, 1];
   let skyDirty = true, skyRough = false, lastCamMove = -1e9;
 
   const canvas = document.getElementById('sky');
   const ctx = canvas.getContext('2d');
-  const bg = document.createElement('canvas'); const bgx = bg.getContext('2d'); // sky, Milky Way, faint stars
-  const fg = document.createElement('canvas'); const fgx = fg.getContext('2d'); // ground silhouette
+  const glCanvas = document.getElementById('skygl');
+  const bg = document.createElement('canvas'); const bgx = bg.getContext('2d'); // generated sky (fallback) and comet
+  const fg = document.createElement('canvas'); const fgx = fg.getContext('2d'); // landscape
+  const ml = document.createElement('canvas'); const mx = ml.getContext('2d');  // meteors and trains
+  const bl1 = document.createElement('canvas'); const b1x = bl1.getContext('2d'); // bloom
+  const bl2 = document.createElement('canvas'); const b2x = bl2.getContext('2d');
+  const HAS_FILTER = typeof b2x.filter === 'string';
+
+  // The real sky, if WebGL2 is available and the star map loads (it can't from file://).
+  // The 4K map comes first so the sky appears quickly; big screens then swap in the 8K map.
+  const sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
+  let skyReady = false;
+  if (sky) {
+    const longSide = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1);
+    const big = sky.maxTexture >= 8192 && longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
+    sky.load('assets/starmap_4k.jpg')
+      .then(() => {
+        skyReady = true; skyDirty = true;
+        document.body.classList.add('real-sky');
+        if (big) return sky.load('assets/starmap_8k.jpg');
+      })
+      .catch(err => console.warn('Star map unavailable, using the generated sky.', err));
+  }
 
   function updateCam() {
     cam.pitch = clamp(cam.pitch, -8 * DEG, 85 * DEG);
@@ -155,7 +207,10 @@
   function resize() {
     DPR = Math.min(2, window.devicePixelRatio || 1);
     W = window.innerWidth; H = window.innerHeight;
-    for (const c of [canvas, bg, fg]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+    for (const c of [canvas, glCanvas, bg, fg, ml]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+    bl1.width = Math.ceil(W / 4); bl1.height = Math.ceil(H / 4);
+    bl2.width = HAS_FILTER ? bl1.width : Math.ceil(W / 12);
+    bl2.height = HAS_FILTER ? bl1.height : Math.ceil(H / 12);
     updateCam();
   }
 
@@ -212,31 +267,40 @@
     (i % 10 === 0 ? mwGlow : mw).push(q);
   }
 
-  // Horizon: rolling hills with patches of conifers, in degrees of altitude, every 0.1° of azimuth.
-  const TN = 3600;
-  const terr = new Float32Array(TN);
+  // Landscape: three layers in degrees of altitude, every 0.05° of azimuth — a distant mountain range,
+  // nearer hills and the treeline in front. Haze makes the far layers a touch lighter.
+  const TN = 7200;   // samples per full circle (every 0.05°)
+  const far = new Float32Array(TN), mid = new Float32Array(TN), near = new Float32Array(TN), terr = new Float32Array(TN);
+  const ridge = x => (1 - Math.abs(Math.sin(x))) ** 2;
   for (let i = 0; i < TN; i++) {
     const a = (i / TN) * TAU;
-    terr[i] = Math.max(0.15, 0.9 + 0.55 * Math.sin(a * 2 + 0.7) + 0.35 * Math.sin(a * 5 + 2.1)
-      + 0.18 * Math.sin(a * 11 + 0.3) + 0.07 * Math.sin(a * 29 + 1.3));
+    const r = (ridge(a * 3 + 0.4) + 0.5 * ridge(a * 7 + 1.9) + 0.25 * ridge(a * 17 + 0.7) + 0.12 * ridge(a * 41 + 2.2)) / 1.87;
+    const range = smooth(0.15, 0.85, 0.5 + 0.5 * Math.sin(a - 1.63));   // the mountains lie to the south
+    far[i] = 0.35 + (0.4 + 3.6 * r ** 1.6) * range;
+    mid[i] = Math.max(0.15, 0.75 + 0.45 * Math.sin(a * 2 + 0.7) + 0.3 * Math.sin(a * 5 + 2.1)
+      + 0.15 * Math.sin(a * 11 + 0.3) + 0.06 * Math.sin(a * 29 + 1.3));
+    near[i] = Math.max(0.05, mid[i] * 0.55 + 0.1 * Math.sin(a * 13 + 1.1));
   }
-  const hills = terr.slice();
   const forest = a => Math.sin(a * 3 + 1.1) + 0.6 * Math.sin(a * 7 + 0.4) > -0.35;
-  for (let k = 0; k < 1100; k++) {
+  for (let k = 0; k < 2200; k++) {
     const c = Math.floor(srand() * TN), a = (c / TN) * TAU;
     if (!forest(a)) continue;
-    const h = 0.9 + srand() * 2.8;
-    const round = srand() < 0.15;
-    const hw = Math.max(2, Math.round((round ? 0.45 : 0.19) * h * 10 * (0.8 + srand() * 0.5)));
-    const base = hills[c];
+    const h = 0.6 + srand() * 1.9;
+    const round = srand() < 0.12;
+    const hw = Math.max(2, Math.round((round ? 0.4 : 0.2) * h * 20 * (0.85 + srand() * 0.3)));
+    const base = near[c];
     for (let j = -hw; j <= hw; j++) {
       const idx = (c + j + TN) % TN, f = 1 - Math.abs(j) / hw;
-      const y = round ? base + h * 0.8 * Math.sqrt(1 - (j / hw) ** 2)
-                      : base + h * f * (0.9 + 0.1 * Math.sin(j * 2.7 + k));
-      if (y > terr[idx]) terr[idx] = y;
+      // conifers: a narrow spire with slightly concave sides; broadleaf trees: a dome
+      const y = round ? base + h * 0.75 * Math.sqrt(1 - (j / hw) ** 2)
+                      : base + h * f ** 1.25 * (0.96 + 0.04 * srand());
+      if (y > near[idx]) near[idx] = y;
     }
   }
-  const terrainAt = az => terr[((Math.round((az / DEG) * 10) % TN) + TN) % TN];
+  for (let i = 0; i < TN; i++) terr[i] = Math.max(far[i], mid[i], near[i]);
+  const terrIdx = az => ((Math.round((az / DEG) * 20) % TN) + TN) % TN;
+  const terrainAt = az => terr[terrIdx(az)];
+  const TENT_AZ = 86 * DEG;
 
   // Comet: a bright one low in the east before dawn. It sits still among the stars over a night's
   // watch. The gas (ion) tail points straight away from the Sun; the dust tail curves behind it.
@@ -289,14 +353,27 @@
   function skyColors() {
     const t = clamp((6.6 - S.lm) / 3.4, 0, 1);
     return {
-      zen: mix([3, 5, 11], [27, 26, 37], t),
-      hor: mix([13, 17, 27], [80, 60, 45], t),
+      t,
+      zen: mix([3, 5, 11], [26, 25, 36], t),
+      hor: mix([12, 16, 26], [62, 50, 44], t),
+      dome: mix([0, 0, 0], [120, 84, 52], t),
       ground: mix([2, 3, 5], [10, 9, 10], t),
     };
   }
 
   function renderBg(quick) {
     const c = bgx;
+    if (sky && skyReady) {
+      // The real sky is drawn by WebGL; this layer only carries the comet.
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, bg.width, bg.height);
+      c.setTransform(DPR, 0, 0, DPR, 0, 0);
+      c.globalCompositeOperation = 'lighter';
+      if (S.comet) drawComet(c, quick);
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = 'source-over';
+      return;
+    }
     c.setTransform(DPR, 0, 0, DPR, 0, 0);
     c.globalCompositeOperation = 'source-over';
     c.globalAlpha = 1;
@@ -304,7 +381,7 @@
     const yH = H / 2 + Math.tan(cam.pitch) * focal;            // horizon line (no camera roll)
     const y35 = H / 2 - Math.tan(35 * DEG - cam.pitch) * focal;
     const g = c.createLinearGradient(0, yH, 0, y35);
-    g.addColorStop(0, rgb(col.hor));
+    g.addColorStop(0, rgb(mix(col.hor, col.dome, 0.5)));
     g.addColorStop(0.35, rgb(mix(col.hor, col.zen, 0.65)));
     g.addColorStop(1, rgb(col.zen));
     c.fillStyle = g;
@@ -370,16 +447,12 @@
     c.beginPath(); c.arc(x, y, 1.3, 0, TAU); c.fill();
   }
 
-  function renderFg() {
-    const c = fgx;
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.clearRect(0, 0, fg.width, fg.height);
-    c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  function fillLayer(c, arr, color) {
     c.beginPath();
     let first = true, firstX = 0, lastX = 0;
-    for (let d = -880; d <= 880; d++) {
-      const az = cam.yaw + d * 0.1 * DEG;
-      const p = project(dir(az, terrainAt(az) * DEG));
+    for (let d = -1760; d <= 1760; d++) {
+      const az = cam.yaw + d * 0.05 * DEG;
+      const p = project(dir(az, arr[terrIdx(az)] * DEG));
       if (!p) continue;
       if (first) { c.moveTo(p[0], p[1]); firstX = p[0]; first = false; } else c.lineTo(p[0], p[1]);
       lastX = p[0];
@@ -388,8 +461,46 @@
     c.lineTo(lastX, 1e5);
     c.lineTo(firstX, 1e5);
     c.closePath();
-    c.fillStyle = rgb(skyColors().ground);
+    c.fillStyle = color;
     c.fill();
+  }
+
+  function drawTent(c, col) {
+    // A small tent about 40 m away, lit from inside: 3.6° wide, its peak just under the horizon.
+    const pts = [[-1.8, -2.4], [0, -0.35], [1.8, -2.4]].map(([da, al]) => {
+      const p = project(dir(TENT_AZ + da * DEG, al * DEG));
+      return p && [p[0], p[1]];
+    });
+    if (pts.some(p => !p) || pts.every(p => !onScreen(p, 60))) return;
+    const [l, top, r] = pts;
+    const w = r[0] - l[0], cx = top[0], cy = (l[1] * 2 + top[1]) / 3;
+    const halo = c.createRadialGradient(cx, l[1], 0, cx, l[1], w * 1.7);
+    halo.addColorStop(0, 'rgba(255,150,70,0.16)');
+    halo.addColorStop(1, 'rgba(255,150,70,0)');
+    c.fillStyle = halo;
+    c.fillRect(cx - w * 1.7, l[1] - w * 1.7, w * 3.4, w * 3.4);
+    const g = c.createRadialGradient(cx, cy + w * 0.1, 0, cx, cy, w * 0.7);
+    g.addColorStop(0, 'rgba(255,200,125,0.95)');
+    g.addColorStop(0.6, 'rgba(214,120,56,0.88)');
+    g.addColorStop(1, 'rgba(110,52,24,0.92)');
+    c.beginPath(); c.moveTo(l[0], l[1]); c.lineTo(top[0], top[1]); c.lineTo(r[0], r[1]); c.closePath();
+    c.fillStyle = g; c.fill();
+    c.strokeStyle = rgba(col.ground, 0.55);
+    c.lineWidth = Math.max(1, w * 0.02);
+    c.beginPath(); c.moveTo(top[0], top[1]); c.lineTo(top[0], l[1]); c.stroke();
+  }
+
+  function renderFg() {
+    const c = fgx;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, fg.width, fg.height);
+    c.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const col = skyColors();
+    const haze = mix(col.hor, col.dome, 0.4);
+    fillLayer(c, far, rgb(mix(haze, col.ground, 0.6)));
+    fillLayer(c, mid, rgb(mix(haze, col.ground, 0.83)));
+    fillLayer(c, near, rgb(col.ground));
+    drawTent(c, col);
   }
 
   // ------------------------------------------------------------------ meteors
@@ -399,6 +510,7 @@
 
   const resetSpawn = () => { nextSpawn = simT + expRand(S.rate); };
   const resetSeen = () => { seen = []; seenStart = simT; };
+  const lstNow = () => lst0 + simT * SIDEREAL;
 
   function sampleMag(r) {
     // N(<=m) grows by a factor r per magnitude, up to the naked-eye limit
@@ -447,11 +559,12 @@
       const tv = clamp((v - 25) / 45, 0, 1);
       meteors.push({
         P, t, sA: -L / 2, L, dur, age: 0, m: mEff,
-        head: mix([255, 232, 190], [212, 234, 255], tv).map(Math.round),
+        head: mix([255, 232, 190], [222, 240, 255], tv).map(Math.round),
         trail: mix([255, 160, 80], [120, 255, 175], tv).map(Math.round),
         flareAt: 0.5 + Math.random() * 0.45,
         flareAmp: mEff < 1.5 && Math.random() < 0.35 ? 0.6 + Math.random() * 1.8 : 0,
         train: mEff < 2 && Math.random() < sh.trainProb,
+        seed: Math.random() * 1000,
       });
 
       // Did it land in the view, above the trees, bright enough for this sky?
@@ -493,6 +606,7 @@
   let visibleNow = 0;
 
   function drawMeteors(dt) {
+    const ctx = mx;   // meteors go on their own layer so they can bloom
     ctx.lineCap = 'round';
     let flash = 0;
     visibleNow = 0;
@@ -524,17 +638,40 @@
       if ((hx < -60 && tx < -60) || (hx > W + 60 && tx > W + 60) || (hy < -60 && ty < -60) || (hy > H + 60 && ty > H + 60)) continue;
       if (onScreen([hx, hy])) visibleNow++;
 
-      const w = Math.min(7, 1.4 + Math.max(0, 3.5 - mNow) * 0.42);
-      const [hr, hg, hb] = M.head, [tr, tg, tb] = M.trail;
-      if (Math.hypot(hx - tx, hy - ty) > 0.5) {
+      const w = Math.min(7, 1.3 + Math.max(0, 3.5 - mNow) * 0.42);
+      const len = Math.hypot(hx - tx, hy - ty);
+      if (len > 0.5) {
         const g = ctx.createLinearGradient(tx, ty, hx, hy);
-        g.addColorStop(0, `rgba(${tr},${tg},${tb},0)`);
-        g.addColorStop(0.55, `rgba(${tr},${tg},${tb},${(a * 0.4).toFixed(3)})`);
-        g.addColorStop(1, `rgba(${hr},${hg},${hb},${a.toFixed(3)})`);
+        g.addColorStop(0, rgba(M.trail, 0));
+        g.addColorStop(0.55, rgba(M.trail, a * 0.4));
+        g.addColorStop(0.92, rgba(M.head, a * 0.85));
+        g.addColorStop(1, rgba(M.head, a));
         ctx.strokeStyle = g;
         ctx.lineWidth = w;
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
-        if (mNow < 1) { ctx.globalAlpha = 0.25; ctx.lineWidth = w * 3.2; ctx.stroke(); ctx.globalAlpha = 1; }
+        // a thin white-hot core along the front of bright meteors
+        if (mNow < 2) {
+          const cx = lerp(hx, tx, 0.35), cy = lerp(hy, ty, 0.35);
+          const cg = ctx.createLinearGradient(cx, cy, hx, hy);
+          cg.addColorStop(0, 'rgba(255,255,255,0)');
+          cg.addColorStop(1, `rgba(255,255,255,${(a * 0.9).toFixed(3)})`);
+          ctx.strokeStyle = cg; ctx.lineWidth = Math.max(1, w * 0.35);
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke();
+        }
+      }
+      // Fireballs shed glowing fragments behind the head.
+      if (mNow < -1 && len > 4) {
+        const nx = -(hy - ty) / len, ny = (hx - tx) / len;
+        const n = Math.min(9, 3 + Math.round(-mNow));
+        for (let k = 1; k <= n; k++) {
+          const f = (k / (n + 1)) * 0.45 + 0.03 * Math.sin(M.seed + k * 7.1 + M.age * 40);
+          const off = Math.sin(M.seed * 1.3 + k * 3.7) * w * 0.9;
+          const sx = lerp(hx, tx, f) + nx * off, sy = lerp(hy, ty, f) + ny * off;
+          const r = (1 - k / (n + 2)) * (1.5 + w * 0.6);
+          ctx.globalAlpha = a * 0.7 * (1 - k / (n + 1)) * (0.6 + 0.4 * Math.sin(M.age * 60 + k));
+          ctx.drawImage(glow, sx - r * 2, sy - r * 2, r * 4, r * 4);
+        }
+        ctx.globalAlpha = 1;
       }
       const hs = mNow < 2.5 ? Math.min(60, 3 + (2.5 - mNow) * 4.5) : 2.5;
       ctx.globalAlpha = a * (mNow < 2.5 ? 0.9 : 0.6);
@@ -546,6 +683,7 @@
   }
 
   function drawTrains(dt) {
+    const ctx = mx;
     const sc = focal / 900;
     const dark = clamp((S.lm - 3) / 3.5, 0.15, 1);
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -604,10 +742,44 @@
     ctx.beginPath(); ctx.arc(x, y, 16, 0, TAU); ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(155,215,255,0.85)';
-    ctx.font = '12px system-ui, sans-serif';
+    ctx.font = '500 12px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`${SHOWERS[S.shower].name} radiant`, x, y - 24);
     ctx.restore();
+  }
+
+  // Composite the meteor layer with a soft bloom, as bright light scatters in the eye.
+  function compositeMeteors() {
+    b1x.globalCompositeOperation = 'copy';
+    b1x.drawImage(ml, 0, 0, bl1.width, bl1.height);
+    b2x.globalCompositeOperation = 'copy';
+    if (HAS_FILTER) { b2x.filter = 'blur(3px)'; b2x.drawImage(bl1, 0, 0); b2x.filter = 'none'; }
+    else b2x.drawImage(bl1, 0, 0, bl2.width, bl2.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(ml, 0, 0);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(bl2, 0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(bl1, 0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  function renderSky() {
+    const col = skyColors();
+    sky.render({
+      F, R, U, focal: focal * DPR,
+      lat: LAT, lst: lstNow(), time: simT,
+      exposure: 1.7,
+      starBoost: 2.2,
+      // the faint end of the map sinks into a brighter sky
+      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * (REF_LM - S.lm)) - 1)),
+      pollution: col.t,
+      domeAz: DOME_AZ,
+      zen: toLinear(col.zen), hor: toLinear(col.hor), dome: toLinear(col.dome), ground: toLinear(col.ground),
+    });
   }
 
   // ------------------------------------------------------------------ loop
@@ -628,7 +800,9 @@
       let n = 0;
       while (nextSpawn <= simT && n < 3000) { spawnOne(); nextSpawn += expRand(S.rate); n++; }
       if (n >= 3000) resetSpawn();
+      if (S.shower !== 'sporadic') radVec = eqToHor(radRa, radDec, lstNow());
     }
+    const real = !!(sky && skyReady);
     if (skyDirty) {
       const moving = now - lastCamMove < 150;
       renderBg(moving); renderFg();
@@ -640,13 +814,24 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
+    if (real) {
+      renderSky();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
     ctx.drawImage(bg, 0, 0);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (!real) {
+      ctx.globalCompositeOperation = 'lighter';
+      drawBrightStars(realT);
+    }
 
-    ctx.globalCompositeOperation = 'lighter';
-    drawBrightStars(realT);
+    mx.setTransform(1, 0, 0, 1, 0, 0);
+    mx.clearRect(0, 0, ml.width, ml.height);
+    mx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    mx.globalCompositeOperation = 'lighter';
     drawTrains(dt);
     const flash = drawMeteors(dt);
+    compositeMeteors();
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -741,7 +926,13 @@
   function setShower(key) {
     S.shower = key;
     const sh = SHOWERS[key];
-    if (key !== 'sporadic') setRadiant(sh.az * DEG, sh.alt * DEG);
+    const rd = RADIANTS[key];
+    if (rd) {
+      // Turn the sky so the radiant stands where this shower is best seen.
+      radRa = rd[0] * DEG; radDec = rd[1] * DEG;
+      lst0 = lstFor(radRa, radDec, sh.alt * DEG, sh.az < 180) - simT * SIDEREAL;
+      radVec = eqToHor(radRa, radDec, lstNow());
+    }
     for (const b of el.showerSeg.children) b.classList.toggle('active', b.dataset.s === key);
     el.showerNote.textContent = sh.note;
     resetSeen();
@@ -840,14 +1031,25 @@
   $('closePanel').addEventListener('click', () => setPanel(false));
   $('openPanel').addEventListener('click', () => setPanel(true));
 
+  // intro card
+  const intro = $('intro');
+  const dismissIntro = () => { if (intro) intro.classList.add('gone'); };
+  if (intro) {
+    setTimeout(dismissIntro, 5500);
+    intro.addEventListener('transitionend', () => { if (intro.classList.contains('gone')) intro.remove(); });
+  }
+
   // ---- looking around
   const pointers = new Map();
   let pinch = null;
   canvas.addEventListener('pointerdown', e => {
+    dismissIntro();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if ((e.shiftKey || e.altKey) && S.shower !== 'sporadic') {
       const v = unproject(e.clientX, e.clientY);
-      setRadiant(azOf(v), Math.max(0, Math.asin(v[2])));
+      v[2] = Math.max(0, v[2]);
+      [radRa, radDec] = horToEq(norm(v), lstNow());
+      radVec = eqToHor(radRa, radDec, lstNow());
       S.showRadiant = el.showRadiant.checked = true;
       return;
     }
@@ -890,6 +1092,7 @@
   window.addEventListener('keydown', e => {
     if (e.target instanceof HTMLInputElement && e.target.type === 'number') return;
     const k = e.key.toLowerCase();
+    dismissIntro();
     if (k === ' ') { e.preventDefault(); setTime(S.timeScale === 0 ? lastSpeed : 0); }
     else if (k === 'h') setPanel(document.body.classList.contains('ui-hidden'));
     else if (k === 'z') document.body.classList.toggle('zen');
@@ -903,8 +1106,9 @@
   window.addEventListener('resize', resize);
 
   // handy for poking at the simulation from the browser console
-  window.meteorSim = { S, cam, meteors, trains, comet, render, setRate: r => setRate(r),
-    project: v => { const p = project(v); return p && [p[0], p[1]]; }, arcPoint };
+  window.meteorSim = { S, cam, meteors, trains, comet, render, setRate: r => setRate(r), setLm: l => setLm(l),
+    project: v => { const p = project(v); return p && [p[0], p[1]]; }, arcPoint,
+    get realSky() { return !!(sky && skyReady); }, get skyTexture() { return sky ? sky.textureSize : 0; } };
 
   // ------------------------------------------------------------------ start
   if (window.innerWidth < 700) setPanel(false);

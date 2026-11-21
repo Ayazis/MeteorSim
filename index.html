@@ -4,10 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Meteor Storm Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="preload" href="assets/starmap_4k.jpg" as="fetch" crossorigin>
 </head>
 <body>
+<canvas id="skygl" aria-hidden="true"></canvas>
 <canvas id="sky" aria-label="Simulated night sky with meteors, seen from the ground"></canvas>
+<div id="vignette" aria-hidden="true"></div>
+
+<div id="intro" aria-hidden="true">
+  <div class="intro-num">44</div>
+  <div class="intro-line">meteors every second</div>
+  <div class="intro-sub">A Leonid storm before dawn, from a dark field far from town. Look up.</div>
+</div>
 
 <div id="hud">
   <div class="hud-rate"><span id="hudBig">44</span><span id="hudUnit">meteors / second</span></div>
@@ -107,11 +119,14 @@
       <li>Brightness follows a population index of about 2.5: each step of one magnitude brighter is about 2.5× rarer. Bright, fast meteors can leave glowing trains that drift and fade.</li>
       <li>Light pollution hides faint meteors and stars, just as it would for your eyes.</li>
       <li>The comet sits still among the stars, as a real one does over a night's watch. It isn't tied to the shower.</li>
-      <li>The stars, Milky Way, comet and treeline are generated, not a real star chart.</li>
+      <li>The stars and Milky Way are a real all-sky map (NASA's Deep Star Maps 2020, from Gaia, Hipparcos and Tycho data), turned to the horizon of a site at 45° north at the time of night each shower is best seen. Toward the horizon they dim and redden through more air, faint light loses its colour as it does for night vision, and stars twinkle more low down.</li>
+      <li>The comet and the landscape are invented. Without WebGL2, or when the page is opened straight from disk, the stars and Milky Way are generated too.</li>
     </ul>
+    <p class="credit">Star map: NASA/Goddard Space Flight Center Scientific Visualization Studio, <a href="https://svs.gsfc.nasa.gov/4851/" target="_blank" rel="noopener">Deep Star Maps 2020</a>. Gaia DR2: ESA/Gaia/DPAC.</p>
   </details>
 </aside>
 
+<script src="skygl.js"></script>
 <script src="sim.js"></script>
 </body>
 </html>

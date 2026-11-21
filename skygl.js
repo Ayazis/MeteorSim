@@ -177,9 +177,10 @@ void main() {
         gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT,
           Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
       }
+      const width = img.width || 0;
       if (img.close) img.close();
       if (tex) gl.deleteTexture(tex);
-      tex = t; texSize = img.width || 0;
+      tex = t; texSize = width;
     }
 
     function render(u) {
