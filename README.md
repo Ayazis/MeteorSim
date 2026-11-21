@@ -21,7 +21,7 @@ Then open <http://localhost:8765>. Opened from disk, it still works, but with a 
 - **Radiants:** each shower's radiant is at its real RA/Dec, so where it stands depends on place and time. The rate scales with the sine of its altitude, as the ZHR does. Scenarios jump to the shower's peak date at the best pre-dawn (or evening) hour for your site. Toward the horizon, stars dim, redden and twinkle more. Faint light loses its colour, as it does for night vision.
 - **Meteors:** each one burns up about 100 km high. Its speed and length on the sky come from the shower's speed, its distance from you and its angle from the radiant. Brightness follows the shower's population index, and fast, bright meteors leave drifting trains. Fireballs shed fragments and light up the landscape.
 - **Light pollution:** a Bortle-class slider (1–9, with an SQM readout) brightens the sky, adds a town's light dome and hides faint stars and meteors, which can bring a storm down to a trickle.
-- **Invented:** the comet, the landscape and the tent.
+- **Invented:** the comet and the landscape.
 
 ## Add-on API
 

@@ -92,15 +92,52 @@
   cv.id = 'impacts'; cv.setAttribute('aria-hidden', 'true');
   const sky = $('sky');
   (sky && sky.parentNode ? sky.parentNode.insertBefore(cv, sky.nextSibling) : document.body.appendChild(cv));
-  const ctx = cv.getContext('2d');
+  let pass = null, ctx = null;
+  function initRenderer() {
+    if (pass || ctx) return;
+    if (window.THREE) {
+      try { pass = createImpactPass(cv); }
+      catch (error) { console.warn('Impact WebGL renderer unavailable.', error); }
+    }
+    if (!pass) ctx = cv.getContext('2d');
+    resize();
+  }
+  function clear() {
+    if (pass) pass.clear();
+    else ctx?.clearRect(0, 0, cv.width, cv.height);
+  }
   let W = 0, H = 0, DPR = 1;
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
+    if (pass) { pass.resize(W,H,DPR); return; }
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx?.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
   window.addEventListener('resize', resize); resize();
+
+  // A replay is authored on the tangent plane of its opening view. Map pixels
+  // between that fixed plane and the live camera by rotating their sightlines.
+  function viewBasis(view) {
+    const { yaw, pitch } = view;
+    const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch);
+    return [[cy,-sy,0], [sy*sp,cy*sp,-cp], [sy*cp,cy*cp,sp]];
+  }
+  function pixelProjection(from, to) {
+    const source = viewBasis(from), target = viewBasis(to);
+    const dot = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    const columns = source.map(axis => {
+      const z = dot(axis,target[2]);
+      return [dot(axis,target[0])*to.focal + z*to.width/2,
+              dot(axis,target[1])*to.focal + z*to.height/2, z];
+    });
+    for (let i=0; i<3; i++) {
+      columns[0][i] /= from.focal;
+      columns[1][i] /= from.focal;
+      columns[2][i] -= columns[0][i]*from.width/2 + columns[1][i]*from.height/2;
+    }
+    return columns.flat();
+  }
 
   function horizonY() {
     const s = window.meteorSim, cam = s && s.cam;
@@ -163,6 +200,7 @@
   const rnd = (a, b) => a + Math.random() * (b - a);
 
   function play(e) {
+    initRenderer();
     stop(true);
     const hy = horizonY(), f = focalPx();
     // where the burst / impact appears: elevation from altitude and distance
@@ -179,7 +217,7 @@
     const realShock = e.shockS;
     const shockAt = realShock ? e.dur + Math.min(realShock, 9) : 0;
     cur = {
-      e, t: 0, last: performance.now(), sx, sy, bx, by, hy, shockAt, realShock, smoke: [], sparks: [], frags: [],
+      anchor: window.MeteorSim.getView(), e, t: 0, last: performance.now(), sx, sy, bx, by, hy, shockAt, realShock, smoke: [], sparks: [], frags: [],
       end: Math.max(e.dur + 14, shockAt + 6) + (e.ejecta ? 10 : 0), shaken: false,
     };
     document.body.classList.add('impact-on');
@@ -191,7 +229,7 @@
 
   function stop(keep) {
     cancelAnimationFrame(raf); raf = 0;
-    ctx.clearRect(0, 0, W, H);
+    clear();
     document.documentElement.style.removeProperty('--impact-shake');
     cv.style.transform = ''; if (sky) sky.style.transform = '';
     caption.classList.remove('show');
@@ -207,6 +245,48 @@
     const c = cur; if (!c) return;
     const dt = Math.min(0.05, (now - c.last) / 1000); c.last = now; c.t += dt;
     const e = c.e, t = c.t, D = e.dur;
+    const flash = flashCurve(e,t);
+    const view = window.MeteorSim.getView();
+    let transform = '';
+    if (pass) {
+      pass.draw(c,W,H,reduced.matches ? Math.min(.14,flash) : flash, pixelProjection(view,c.anchor));
+    } else {
+      const [a,b,g,d,f,h,x,y,z] = pixelProjection(c.anchor,view);
+      cv.style.transformOrigin = '0 0';
+      cv.style.width = c.anchor.width + 'px';
+      cv.style.height = c.anchor.height + 'px';
+      cv.width !== Math.round(c.anchor.width*DPR) && (cv.width = Math.round(c.anchor.width*DPR));
+      cv.height !== Math.round(c.anchor.height*DPR) && (cv.height = Math.round(c.anchor.height*DPR));
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+      transform = 'matrix3d('+[a,b,0,g,d,f,0,h,0,0,1,0,x,y,0,z].join(',')+')';
+      drawCanvas(c,dt,e,t,D,c.anchor.width,c.anchor.height);
+    }
+
+    // captions and the shock wave
+    if (t >= D && !c.said) {
+      c.said = true;
+      if (e.kind === 'graze') say('It climbs back out of the atmosphere and returns to space.');
+      else if (c.realShock) say(`Silence. The shock wave arrives after ${fmtDelay(c.realShock)}${c.realShock > 9 ? ' (shortened here)' : ''}.`);
+      else say('Too far and too high: no shock wave reaches you, only a distant rumble at most.');
+    }
+    if (c.shockAt && t >= c.shockAt && !c.shaken) {
+      c.shaken = true;
+      say(`Shock wave: ${fmtDelay(c.realShock)} after the flash.` + (e.kind === 'global' ? ' Then ejecta begins raining back across the sky.' : ''));
+    }
+    const sk = c.shockAt && t >= c.shockAt ? Math.max(0, 1 - (t - c.shockAt) / 2.2) * e.shake : 0;
+    if (!reduced.matches && sk > 0) {
+      const a = 14 * sk;
+      const tr = `translate(${rnd(-a, a).toFixed(1)}px, ${rnd(-a, a).toFixed(1)}px)`;
+      transform = tr + ' ' + transform; if (sky) sky.style.transform = tr;
+    } else if (sky) sky.style.transform = '';
+    cv.style.transform = transform;
+    if (!pass && reduced.matches && sk > 0.3) { ctx.fillStyle = `rgba(255,255,255,${0.06 * sk})`; ctx.fillRect(0, 0, W, H); }
+
+    if (t > c.end) { caption.classList.remove('show'); clear(); cv.style.transform = ''; if (sky) sky.style.transform = ''; raf = 0; return; }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function drawCanvas(c,dt,e,t,D,W,H) {
     ctx.clearRect(0, 0, W, H);
 
     // progress along the path: accelerating brightness, ending at burst/impact
@@ -318,27 +398,6 @@
       ctx.restore();
     }
 
-    // captions and the shock wave
-    if (t >= D && !c.said) {
-      c.said = true;
-      if (e.kind === 'graze') say('It climbs back out of the atmosphere and returns to space.');
-      else if (c.realShock) say(`Silence. The shock wave arrives after ${fmtDelay(c.realShock)}${c.realShock > 9 ? ' (shortened here)' : ''}.`);
-      else say('Too far and too high: no shock wave reaches you, only a distant rumble at most.');
-    }
-    if (c.shockAt && t >= c.shockAt && !c.shaken) {
-      c.shaken = true;
-      say(`Shock wave: ${fmtDelay(c.realShock)} after the flash.` + (e.kind === 'global' ? ' Then ejecta begins raining back across the sky.' : ''));
-    }
-    const sk = c.shockAt && t >= c.shockAt ? Math.max(0, 1 - (t - c.shockAt) / 2.2) * e.shake : 0;
-    if (!reduced.matches && sk > 0) {
-      const a = 14 * sk;
-      const tr = `translate(${rnd(-a, a).toFixed(1)}px, ${rnd(-a, a).toFixed(1)}px)`;
-      cv.style.transform = tr; if (sky) sky.style.transform = tr;
-    } else if (cv.style.transform) { cv.style.transform = ''; if (sky) sky.style.transform = ''; }
-    if (reduced.matches && sk > 0.3) { ctx.fillStyle = `rgba(255,255,255,${0.06 * sk})`; ctx.fillRect(0, 0, W, H); }
-
-    if (t > c.end) { caption.classList.remove('show'); ctx.clearRect(0, 0, W, H); cv.style.transform = ''; if (sky) sky.style.transform = ''; raf = 0; return; }
-    raf = requestAnimationFrame(frame);
   }
 
   // whole-screen flash strength: log-scaled so a 30x-Sun Chelyabinsk nearly whites out the view,

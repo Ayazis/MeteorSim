@@ -1,4 +1,4 @@
-/* Real night sky in WebGL2.
+/* Real night sky in Three.js.
  *
  * Draws an all-sky star map (NASA/GSFC Scientific Visualization Studio "Deep Star Maps 2020",
  * Gaia DR2: ESA/Gaia/DPAC) as seen from the ground: the equirectangular map in RA/Dec is
@@ -10,13 +10,75 @@
 (() => {
   'use strict';
 
-  const VS = `#version 300 es
-in vec2 aPos;
-void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+  const VS = `
+in vec3 position;
+void main() { gl_Position = vec4(position, 1.0); }`;
 
-  const FS = `#version 300 es
+  const auroraFragment = `
+precision highp float;
+uniform vec3 uF, uR, uU;
+uniform vec2 uRes, uPassSize;
+uniform float uFocal, uAuroraTime, uLat, uActivity;
+uniform float uFoldDepth, uRayContrast, uCurtainHeight, uUpperRed, uPinkFringe, uPinkGlow, uPurpleGlow, uTealTint, uGreenHeight, uRedHeight, uPinkHeight, uPurpleHeight, uFringeHeight;
+out vec4 outColor;
+
+float noise1(float x) {
+  float i = floor(x), f = fract(x);
+  vec2 seed = fract(vec2(i, i + 1.0) * 0.1031);
+  seed *= seed + 33.33;
+  return mix(fract(seed.x * (seed.x + seed.x)), fract(seed.y * (seed.y + seed.y)), f*f*(3.0-2.0*f));
+}
+
+void main() {
+  vec2 pixel = (gl_FragCoord.xy / uPassSize - 0.5) * uRes;
+  vec3 ray = normalize(uF + uR * pixel.x / uFocal + uU * pixel.y / uFocal);
+  ray.y *= uLat < 0.0 ? -1.0 : 1.0;
+  float az = atan(ray.x, ray.y);
+  float elevation = asin(clamp(ray.z, -1.0, 1.0));
+  float t = uAuroraTime * 0.12;
+  vec3 light = vec3(0.0);
+  // Evaluate continuous ribbon profiles in angular space. Fixed altitude
+  // slices can resolve into parallel stripes when viewed at a shallow angle.
+  for (int i = 0; i < 3; ++i) {
+    float layer = float(i);
+    float x = az + 2.37*layer;
+    float flow = x + 0.14*sin(1.8*x - t) + 0.08*sin(4.1*x + 0.73*t);
+    float fold = noise1(4.2*flow - 0.48*t) - 0.5;
+    float base = mix(0.12, 0.39, uActivity) + 0.095*layer - 0.095*az*az
+               + uFoldDepth*(0.21*fold + 0.065*sin(2.9*x + t + 1.8*fold));
+    float h = elevation - base;
+    float filament = flow + (0.14 + 0.32*uTealTint)*h + 0.04*sin(2.0*x + t + 3.0*h);
+    float rays = mix(0.25, 1.0, noise1(65.0*filament - 1.6*t))
+               * mix(0.55, 1.0, noise1(22.0*filament + 0.8*t));
+    rays = clamp(0.55 + uRayContrast*(rays - 0.55), 0.0, 1.0);
+    float envelope = noise1(2.8*flow + 0.65*t + 9.0);
+    float height = uCurtainHeight*(0.10 + 0.16*envelope + 0.065*uActivity);
+    float hem = smoothstep(-0.035, 0.018, h);
+    float above = max(h, 0.0)/height;
+    // Display approximations in linear RGB, ordered by emission altitude.
+    vec3 oxygenGreen = mix(vec3(0.19, 0.78, 0.016), vec3(0.016, 0.86, 0.45), uTealTint)*exp(-4.8*abs(above-uGreenHeight));
+    float redCap = 0.4*exp(-4.2*abs(above-uRedHeight));
+    vec3 oxygenRed = vec3(0.42, 0.012, 0.004)*redCap*uActivity*uUpperRed;
+    float activeRay = smoothstep(0.60, 0.93, uActivity)*smoothstep(0.32, 0.72, rays);
+    vec3 nitrogenFringe = vec3(0.72, 0.045, 0.29)*exp(-110.0*(above-uFringeHeight)*(above-uFringeHeight))*activeRay*uPinkFringe;
+    vec3 pinkGlow = vec3(0.76, 0.035, 0.30)*0.58*exp(-3.6*abs(above-uPinkHeight))*uPinkGlow;
+    vec3 purpleGlow = vec3(0.28, 0.025, 0.76)*0.5*exp(-3.2*abs(above-uPurpleHeight))*uPurpleGlow;
+    float extent = 1.0 - smoothstep(0.88, 1.85, abs(az + 0.15*sin(t + layer)));
+    vec3 lowerCurtain = (oxygenGreen + nitrogenFringe)*rays;
+    float veil = mix(0.48, rays, 0.48)*mix(0.38, 1.0, noise1(flow*2.2 + layer - t*0.34));
+    vec3 upperCurtain = (oxygenRed + pinkGlow + purpleGlow)*veil;
+    light += (lowerCurtain + upperCurtain)*hem*extent*(0.22+0.78*envelope)/(1.0+layer);
+  }
+  light *= smoothstep(0.015, 0.13, elevation);
+  // Square-root encoding retains faint detail in the 8-bit intermediate texture.
+  outColor = vec4(sqrt(clamp(light, 0.0, 1.0)), 1.0);
+}`;
+
+  const FS = `
 precision highp float;
 uniform sampler2D uSky;
+uniform sampler2D uAurora;
+uniform float uAuroraVisibility;
 uniform vec2 uRes;
 uniform vec3 uF, uR, uU;
 uniform float uFocal, uLat, uLst, uTime;
@@ -107,19 +169,17 @@ void main() {
   float cm = dot(d, uMoonDir);
   sky += uMoonCol * (2.5 * exp((cm - 1.0) * 60.0) + 0.6 * pow(max(cm, 0.0), 6.0));
 
+  if (uAuroraVisibility > 0.0 && alt > 0.0) {
+    vec3 emission = texture(uAurora, gl_FragCoord.xy / uRes).rgb;
+    emission *= emission * uAuroraVisibility;
+    float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
+    sky += mix(vec3(luminance), emission, smoothstep(0.0003, 0.014, luminance));
+  }
   vec3 col = alt < 0.0 ? uGround : sky + star;
   col = toSrgb(col);
   col += (hash(gl_FragCoord.xy + fract(uTime * 0.37) * 311.0) - 0.5) / 255.0;   // dither away banding
   outColor = vec4(col, 1.0);
 }`;
-
-  function compile(gl, type, src) {
-    const sh = gl.createShader(type);
-    gl.shaderSource(sh, src);
-    gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
-    return sh;
-  }
 
   async function fetchMap(url) {
     const res = await fetch(url);
@@ -147,98 +207,91 @@ void main() {
   }
 
   window.SkyGL = function (canvas) {
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
-    if (!gl) return null;
-    let prog;
+    let renderer;
     try {
-      prog = gl.createProgram();
-      gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
-      gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FS));
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-    } catch (e) {
-      console.warn('Sky shader failed, using the generated sky.', e);
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
+    } catch (error) {
+      console.warn('Three.js sky unavailable, using the generated sky.', error);
       return null;
     }
-    gl.useProgram(prog);
 
-    const buf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    const aPos = gl.getAttribLocation(prog, 'aPos');
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
-    const loc = {};
-    for (const n of ['uSky', 'uRes', 'uF', 'uR', 'uU', 'uFocal', 'uLat', 'uLst', 'uTime', 'uExposure', 'uThresh',
-      'uStarBoost', 'uPollution', 'uHasTex', 'uDomeAz', 'uZen', 'uHor', 'uDome', 'uGround',
-      'uSunDir', 'uSunCol', 'uMoonDir', 'uMoonCol']) {
-      loc[n] = gl.getUniformLocation(prog, n);
-    }
-    gl.uniform1i(loc.uSky, 0);
-
-    const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
-    let tex = null, texSize = 0;
+    const uniforms = { uSky: { value: null }, uRes: { value: new THREE.Vector2() }, uHasTex: { value: 0 } };
+    const inputs = ['F', 'R', 'U', 'focal', 'lat', 'lst', 'time', 'exposure', 'thresh', 'starBoost',
+      'pollution', 'domeAz', 'zen', 'hor', 'dome', 'ground', 'sunDir', 'sunCol', 'moonDir', 'moonCol',
+      'activity', 'auroraTime', 'auroraVisibility', 'foldDepth', 'rayContrast', 'curtainHeight', 'upperRed', 'pinkFringe', 'pinkGlow', 'purpleGlow', 'tealTint', 'greenHeight', 'redHeight', 'pinkHeight', 'purpleHeight', 'fringeHeight'];
+    const bindings = inputs.map(key => {
+      const uniform = { value: null };
+      uniforms['u' + key[0].toUpperCase() + key.slice(1)] = uniform;
+      return { key, uniform };
+    });
+    const material = new THREE.RawShaderMaterial({
+      uniforms, vertexShader: VS, fragmentShader: FS, glslVersion: THREE.GLSL3,
+      depthTest: false, depthWrite: false
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.add(mesh);
+    const camera = new THREE.Camera();
+    const auroraTarget = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+    uniforms.uAurora = { value: auroraTarget.texture };
+    uniforms.uPassSize = { value: new THREE.Vector2() };
+    const auroraMaterial = new THREE.RawShaderMaterial({
+      uniforms, vertexShader: VS, fragmentShader: auroraFragment, glslVersion: THREE.GLSL3,
+      depthTest: false, depthWrite: false
+    });
 
     async function load(url) {
       const img = await decode(url);
-      const t = gl.createTexture();
-      const width = img.width;
+      const texture = new THREE.Texture(img);
+      texture.flipY = false;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      texture.needsUpdate = true;
       try {
-        if (!t) throw new Error('Unable to allocate sky texture');
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, t);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-        gl.generateMipmap(gl.TEXTURE_2D);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        if (aniso) {
-          gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT,
-            Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
-        }
+        renderer.initTexture(texture);
+        const gl = renderer.getContext();
         const error = gl.getError();
         if (error !== gl.NO_ERROR) throw new Error(`Sky texture upload failed (${error})`);
       } catch (error) {
-        gl.deleteTexture(t);
-        gl.bindTexture(gl.TEXTURE_2D, tex);
+        texture.dispose();
+        img.close?.();
         throw error;
-      } finally {
-        if (img.close) img.close();
       }
-      if (tex) gl.deleteTexture(tex);
-      tex = t; texSize = width;
+      const previous = uniforms.uSky.value;
+      uniforms.uSky.value = texture;
+      uniforms.uHasTex.value = 1;
+      previous?.dispose();
+      previous?.image.close?.();
     }
 
     function render(u) {
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(loc.uRes, canvas.width, canvas.height);
-      gl.uniform3fv(loc.uF, u.F); gl.uniform3fv(loc.uR, u.R); gl.uniform3fv(loc.uU, u.U);
-      gl.uniform1f(loc.uFocal, u.focal);
-      gl.uniform1f(loc.uLat, u.lat);
-      gl.uniform1f(loc.uLst, u.lst);
-      gl.uniform1f(loc.uTime, u.time);
-      gl.uniform1f(loc.uExposure, u.exposure);
-      gl.uniform1f(loc.uThresh, u.thresh);
-      gl.uniform1f(loc.uStarBoost, u.starBoost);
-      gl.uniform1f(loc.uPollution, u.pollution);
-      gl.uniform1f(loc.uHasTex, tex ? 1 : 0);
-      gl.uniform1f(loc.uDomeAz, u.domeAz);
-      gl.uniform3fv(loc.uZen, u.zen); gl.uniform3fv(loc.uHor, u.hor);
-      gl.uniform3fv(loc.uDome, u.dome); gl.uniform3fv(loc.uGround, u.ground);
-      gl.uniform3fv(loc.uSunDir, u.sunDir || [0, 0, -1]); gl.uniform3fv(loc.uSunCol, u.sunCol || [0, 0, 0]);
-      gl.uniform3fv(loc.uMoonDir, u.moonDir || [0, 0, -1]); gl.uniform3fv(loc.uMoonCol, u.moonCol || [0, 0, 0]);
-      if (tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); }
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const size = uniforms.uRes.value;
+      if (size.x !== canvas.width || size.y !== canvas.height) {
+        size.set(canvas.width, canvas.height);
+        renderer.setSize(size.x, size.y, false);
+      }
+      for (const { key, uniform } of bindings) uniform.value = u[key];
+      if (u.auroraVisibility > 0) {
+        const passSize = uniforms.uPassSize.value;
+        passSize.set(Math.ceil(size.x / 2), Math.ceil(size.y / 2));
+        auroraTarget.setSize(passSize.x, passSize.y);
+        renderer.setRenderTarget(auroraTarget);
+        mesh.material = auroraMaterial;
+        renderer.render(scene, camera);
+        mesh.material = material;
+        renderer.setRenderTarget(null);
+      }
+      renderer.render(scene, camera);
     }
 
     return {
-      maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+      maxTexture: renderer.capabilities.maxTextureSize,
       load, render,
-      get textureSize() { return texSize; },
+      get textureSize() { return uniforms.uSky.value?.image.width || 0; }
     };
   };
 })();

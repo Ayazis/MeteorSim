@@ -240,7 +240,7 @@
 
   // ------------------------------------------------------------------ state
   const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true, guide: false };
-  S.tent = true; S.cardinals = true;
+  S.cardinals = true;
   let radRa = 0, radDec = 0; // the radiant, fixed among the stars
   let radVec = [0, 0, 1];
   let radFactor = 1;         // sin(radiant altitude): the share of the ZHR you can see
@@ -479,7 +479,6 @@
   for (let i = 0; i < TN; i++) terr[i] = Math.max(far[i], mid[i], near[i]);
   const terrIdx = az => ((Math.round((az / DEG) * 20) % TN) + TN) % TN;
   const terrainAt = az => terr[terrIdx(az)];
-  const TENT_AZ = 86 * DEG;
 
   // Comet: a bright one low in the east before dawn. It sits still among the stars over a night's
   // watch. The gas (ion) tail points straight away from the Sun; the dust tail curves behind it.
@@ -659,31 +658,6 @@
     c.fill();
   }
 
-  function drawTent(c, col) {
-    // A small tent about 40 m away, lit from inside: 3.6° wide, its peak just under the horizon.
-    const pts = [[-1.8, -2.4], [0, -0.35], [1.8, -2.4]].map(([da, al]) => {
-      const p = project(dir(TENT_AZ + da * DEG, al * DEG));
-      return p && [p[0], p[1]];
-    });
-    if (pts.some(p => !p) || pts.every(p => !onScreen(p, 60))) return;
-    const [l, top, r] = pts;
-    const w = r[0] - l[0], cx = top[0], cy = (l[1] * 2 + top[1]) / 3;
-    const halo = c.createRadialGradient(cx, l[1], 0, cx, l[1], w * 1.7);
-    halo.addColorStop(0, 'rgba(255,150,70,0.16)');
-    halo.addColorStop(1, 'rgba(255,150,70,0)');
-    c.fillStyle = halo;
-    c.fillRect(cx - w * 1.7, l[1] - w * 1.7, w * 3.4, w * 3.4);
-    const g = c.createRadialGradient(cx, cy + w * 0.1, 0, cx, cy, w * 0.7);
-    g.addColorStop(0, 'rgba(255,200,125,0.95)');
-    g.addColorStop(0.6, 'rgba(214,120,56,0.88)');
-    g.addColorStop(1, 'rgba(110,52,24,0.92)');
-    c.beginPath(); c.moveTo(l[0], l[1]); c.lineTo(top[0], top[1]); c.lineTo(r[0], r[1]); c.closePath();
-    c.fillStyle = g; c.fill();
-    c.strokeStyle = rgba(col.ground, 0.55);
-    c.lineWidth = Math.max(1, w * 0.02);
-    c.beginPath(); c.moveTo(top[0], top[1]); c.lineTo(top[0], l[1]); c.stroke();
-  }
-
   function renderFg() {
     const c = fgx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -694,7 +668,6 @@
     fillLayer(c, far, rgb(mix(haze, col.ground, 0.6)));
     fillLayer(c, mid, rgb(mix(haze, col.ground, 0.83)));
     fillLayer(c, near, rgb(col.ground));
-    if (S.tent) drawTent(c, col);
   }
 
   // Faint compass points on the horizon, just above the landscape.
@@ -778,7 +751,7 @@
 
   // ------------------------------------------------------------------ meteors
   const meteors = [], trains = [];
-  let simT = 0, nextSpawn = 0;
+  let simT = 0, nextSpawn = 0, auroraTime = 0;
   let seen = [], seenStart = 0, totalSeen = 0, fireballs = 0, tallyStart = 0;
 
   const resetSpawn = () => { nextSpawn = simT + expRand(S.rate); };
@@ -877,7 +850,7 @@
 
   let visibleNow = 0;
 
-  function drawMeteors(dt) {
+  function drawMeteors(dt, pass) {
     const ctx = mx;   // meteors go on their own layer so they can bloom
     ctx.lineCap = 'round';
     let flash = 0;
@@ -911,6 +884,11 @@
       if (onScreen([hx, hy])) visibleNow++;
 
       const w = Math.min(7, 1.3 + Math.max(0, 3.5 - mNow) * 0.42);
+      if (mNow < -2) flash += Math.pow(10, -0.4 * (mNow + 2)) * 0.01;
+      if (pass) {
+        pass.add(hx, hy, tx, ty, w, a, mNow, M);
+        continue;
+      }
       const len = Math.hypot(hx - tx, hy - ty);
       if (len > 0.5) {
         const g = ctx.createLinearGradient(tx, ty, hx, hy);
@@ -949,7 +927,7 @@
       ctx.globalAlpha = a * (mNow < 2.5 ? 0.9 : 0.6);
       ctx.drawImage(glow, hx - hs, hy - hs, hs * 2, hs * 2);
       ctx.globalAlpha = 1;
-      if (mNow < -2) flash += Math.pow(10, -0.4 * (mNow + 2)) * 0.01;
+
     }
     return flash;
   }
@@ -1174,7 +1152,7 @@
     if (!activity || sunAltDeg >= -3) return;
     const pole = LAT < 0 ? Math.PI : 0;
     const visibility = activity * (1 - smooth(-16, -3, sunAltDeg)) * (0.3 + 0.7 * smooth(2, 7, S.lm));
-    const phase = simT * 0.14;
+    const phase = auroraTime * 0.14;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (let layer = 0; layer < 2; layer++) {
@@ -1182,21 +1160,25 @@
       for (let i = -156; i <= 156; i++) {
         const a = i * 0.75 * DEG;
         const fold = Math.sin(4 * a + phase + layer) + 0.4 * Math.sin(11 * a - phase);
-        const base = (7 + layer * 9 + activity * 12 + 4 * fold) * DEG;
-        const height = (8 + activity * 16 + 4 * Math.sin(5 * a + phase)) * DEG;
+        const base = (7 + layer * 9 + activity * 12 + 4 * fold * appearance.foldDepth) * DEG;
+        const height = (8 + activity * 16 + 4 * Math.sin(5 * a + phase)) * DEG * appearance.curtainHeight;
         const b = project(dir(pole + a, base))?.slice();
-        const t = project(dir(pole + a + 0.045 * fold, base + height))?.slice();
+        const t = project(dir(pole + a + 0.045 * fold * appearance.foldDepth, base + height))?.slice();
         if (b && t && lastBase && lastTop &&
             Math.max(b[0], t[0], lastBase[0], lastTop[0]) >= 0 &&
             Math.min(b[0], t[0], lastBase[0], lastTop[0]) <= W) {
-          const rays = 0.65 + 0.22 * Math.sin(61 * a + 3 * fold) + 0.13 * Math.sin(97 * a - phase);
+          const rays = clamp(0.65 + appearance.rayContrast * (0.22 * Math.sin(61 * a + 3 * fold) + 0.13 * Math.sin(97 * a - phase)), 0, 1);
           ctx.globalAlpha = visibility * rays * (1 - smooth(0.8, 2.04, Math.abs(a))) / (1 + layer);
           const g = ctx.createLinearGradient(b[0], b[1], t[0], t[1]);
-          g.addColorStop(0, 'rgba(42,225,109,0)');
-          g.addColorStop(0.09, 'rgba(74,248,129,0.72)');
-          g.addColorStop(0.4, 'rgba(49,190,142,0.36)');
-          g.addColorStop(0.78, 'rgba(152,85,173,0.17)');
-          g.addColorStop(1, 'rgba(152,85,173,0)');
+          g.addColorStop(0, 'rgba(140,219,65,0)');
+          g.addColorStop(appearance.fringeHeight, `rgba(218,96,152,${0.52 * smooth(0.6, 0.93, activity) * rays * appearance.pinkFringe})`);
+          g.addColorStop(appearance.greenHeight, `rgba(${129 - 86*appearance.tealTint},225,${54 + 130*appearance.tealTint},0.72)`);
+          if (appearance.pinkGlow > 0) g.addColorStop(appearance.pinkHeight, `rgba(250,104,185,${0.32*appearance.pinkGlow})`);
+          if (appearance.purpleGlow > 0) {
+            g.addColorStop(appearance.purpleHeight, `rgba(153,65,241,${0.32 * appearance.purpleGlow * rays})`);
+          }
+          g.addColorStop(appearance.redHeight, `rgba(186,51,41,${0.19 * activity * appearance.upperRed})`);
+          g.addColorStop(1, 'rgba(186,51,41,0)');
           ctx.fillStyle = g;
           ctx.beginPath();
           ctx.moveTo(...lastBase); ctx.lineTo(...b); ctx.lineTo(...t); ctx.lineTo(...lastTop);
@@ -1213,6 +1195,8 @@
     sky.render({
       F, R, U, focal: focal * DPR,
       lat: LAT, lst: lstNow(), time: simT,
+      activity: S.aurora, auroraTime, ...appearance,
+      auroraVisibility: S.aurora * (1 - smooth(-16, -3, sunAltDeg)) * (0.3 + 0.7 * smooth(2, 7, S.lm)),
       exposure: 1.7,
       starBoost: 2.2,
       // the faint end of the map sinks into a brighter sky
@@ -1252,6 +1236,7 @@
 
     if (dt > 0) {
       simT += dt;
+      auroraTime += dt * S.auroraSpeed;
       let n = 0;
       // A shower's rate scales with the sine of the radiant's altitude, as in the ZHR.
       while (nextSpawn <= simT && n < 3000) { if (Math.random() < radFactor) spawnOne(); nextSpawn += expRand(S.rate); n++; }
@@ -1281,7 +1266,7 @@
     }
     ctx.globalCompositeOperation = 'source-over';
     drawConstellationLines();
-    drawAurora();
+    if (!real) drawAurora();
     drawSunMoon();
     drawLayers(dt);
 
@@ -1290,7 +1275,9 @@
     mx.setTransform(DPR, 0, 0, DPR, 0, 0);
     mx.globalCompositeOperation = 'lighter';
     drawTrains(dt);
-    const flash = drawMeteors(dt);
+    const pass = real ? sky.meteors : null;
+    const flash = drawMeteors(dt, pass);
+    pass?.render(W, H);
     compositeMeteors();
 
     ctx.globalCompositeOperation = 'source-over';
@@ -1322,7 +1309,7 @@
     timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'), showComet: $('showComet'), showGuide: $('showGuide'),
     site: $('site'), lat: $('lat'), lon: $('lon'), geo: $('geo'), locOut: $('locOut'), siteNote: $('siteNote'),
     date: $('date'), tod: $('tod'), todOut: $('todOut'), now: $('nowBtn'), sunNote: $('sunNote'), hudClock: $('hudClock'),
-    showTent: $('showTent'), showCardinals: $('showCardinals'), showLines: $('showLines'),
+    showCardinals: $('showCardinals'), showLines: $('showLines'),
     stSeen: $('stSeen'), stFire: $('stFire'), stNow: $('stNow'), stTime: $('stTime'),
   };
 
@@ -1616,7 +1603,52 @@
   }
   aurora.addEventListener('input', updateAurora);
   updateAurora();
-  el.showTent.addEventListener('change', () => { S.tent = el.showTent.checked; skyDirty = true; });
+  const auroraSpeed = $('auroraSpeed');
+  function updateAuroraSpeed() {
+    S.auroraSpeed = Number(auroraSpeed.value);
+    $('auroraSpeedOut').value = S.auroraSpeed === 0 ? 'Paused' : S.auroraSpeed + '×';
+  }
+  auroraSpeed.addEventListener('input', updateAuroraSpeed);
+  updateAuroraSpeed();
+
+  const appearance = {};
+  for (const key of ['foldDepth', 'rayContrast', 'curtainHeight', 'upperRed', 'pinkFringe', 'pinkGlow', 'purpleGlow', 'tealTint', 'greenHeight', 'redHeight', 'pinkHeight', 'purpleHeight', 'fringeHeight']) {
+    const slider = $(key);
+    const update = () => {
+      appearance[key] = Number(slider.value) / 100;
+      $(key + 'Out').value = slider.value + '%';
+    };
+    slider.addEventListener('input', update);
+    update();
+  }
+  const auroraLooks = {
+    green: { aurora: 92, foldDepth: 140, rayContrast: 105, curtainHeight: 85, upperRed: 12, pinkFringe: 4, pinkGlow: 0, purpleGlow: 0, tealTint: 35, greenHeight: 10, redHeight: 45, pinkHeight: 70, purpleHeight: 90, fringeHeight: 4 },
+    magenta: { aurora: 56, foldDepth: 18, rayContrast: 55, curtainHeight: 165, upperRed: 120, pinkFringe: 0, pinkGlow: 130, purpleGlow: 65, tealTint: 0, greenHeight: 8, redHeight: 42, pinkHeight: 66, purpleHeight: 90, fringeHeight: 4 },
+    teal: { aurora: 100, foldDepth: 150, rayContrast: 140, curtainHeight: 180, upperRed: 8, pinkFringe: 15, pinkGlow: 18, purpleGlow: 48, tealTint: 100, greenHeight: 18, redHeight: 55, pinkHeight: 65, purpleHeight: 86, fringeHeight: 5 }
+  };
+  const lookSelector = $('auroraLook');
+  for (const key of ['aurora', ...Object.keys(appearance)]) {
+    $(key).addEventListener('input', () => { lookSelector.value = ''; });
+  }
+  lookSelector.addEventListener('change', () => {
+    const name = lookSelector.value;
+    if (!name) return;
+    for (const [key, value] of Object.entries(auroraLooks[name])) {
+      const slider = $(key);
+      slider.value = value;
+      slider.dispatchEvent(new Event('input'));
+    }
+    lookSelector.value = name;
+  });
+  $('exportAurora').addEventListener('click', () => {
+    const preset = { version: 2, activity: S.aurora, speed: S.auroraSpeed, ...appearance };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'meteorsim-aurora.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
   el.showCardinals.addEventListener('change', () => { S.cardinals = el.showCardinals.checked; });
 
   el.modeSeg.addEventListener('click', e => {
