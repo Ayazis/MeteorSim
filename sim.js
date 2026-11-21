@@ -141,7 +141,7 @@
   }
 
   // ------------------------------------------------------------------ state
-  const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true };
+  const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true, guide: false };
   let lst0 = 0;              // sidereal time at simT = 0
   let radRa = 0, radDec = 0; // the radiant, fixed among the stars
   let radVec = [0, 0, 1];
@@ -748,6 +748,99 @@
     ctx.restore();
   }
 
+  // ---- Sky guide: names of stars, star systems, deep-sky objects and constellations
+  const INFO = window.SKY_INFO || { stars: [], deep: [], constellations: [] };
+  const HR = TAU / 24;
+  const guideItems = [
+    ...INFO.stars.map(o => ({ ...o, kind: 'star' })),
+    ...INFO.deep.map(o => ({ ...o, kind: 'deep' })),
+  ];
+  let guideHits = [], guideHover = null, guidePinned = null;
+  const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  function fmtLy(d) {
+    if (d >= 1e6) return `${(d / 1e6).toFixed(1)} million light-years`;
+    return `${nf.format(d < 20 ? +d.toFixed(1) : Math.round(d))} light-years`;
+  }
+  function drawGuide() {
+    guideHits = [];
+    if (!S.guide) return;
+    const lst = lstNow();
+    const narrow = cam.fov < 70 * DEG;
+    ctx.save();
+    ctx.textAlign = 'center';
+    // constellations, faint and spaced out
+    ctx.font = '400 11px Inter, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(155,180,230,0.42)';
+    for (const c of INFO.constellations) {
+      const v = eqToHor(c.ra * HR, c.dec * DEG, lst);
+      if (v[2] < 0.03) continue;
+      const p = project(v);
+      if (!p || !onScreen(p, -10)) continue;
+      ctx.fillText(c.n.toUpperCase().split('').join('\u200A'), p[0], p[1]);
+    }
+    for (const o of guideItems) {
+      const v = eqToHor(o.ra * HR, o.dec * DEG, lst);
+      o.v = v;
+      if (v[2] < 0) continue;
+      const p = project(v);
+      if (!p || !onScreen(p, 10)) continue;
+      const x = p[0], y = p[1];
+      const deep = o.kind === 'deep';
+      const hidden = o.m > lmNow;   // too faint to see under this sky
+      const active = o === guideHover || o === guidePinned;
+      if (!active && !narrow && !deep && o.m > 1.7) { guideHits.push({ o, x, y }); continue; }
+      const a = (hidden ? 0.35 : 0.75) * (active ? 1.3 : 1);
+      ctx.strokeStyle = deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
+      ctx.lineWidth = 1;
+      const r = deep ? 9 : 7;
+      ctx.beginPath();
+      if (deep) { ctx.setLineDash([2, 3]); ctx.arc(x, y, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
+      else { ctx.arc(x, y, r, 0, TAU); ctx.stroke(); }
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = `${active ? 500 : 400} 11.5px Inter, system-ui, sans-serif`;
+      ctx.fillText(deep ? `${o.n}` : o.n, x, y - r - 5);
+      guideHits.push({ o, x, y });
+    }
+    ctx.restore();
+    updateCard();
+  }
+  function guideAt(x, y) {
+    let best = null, bd = 22 * 22;
+    for (const h of guideHits) {
+      const d = (h.x - x) ** 2 + (h.y - y) ** 2;
+      if (d < bd) { bd = d; best = h.o; }
+    }
+    return best;
+  }
+  const skyCard = document.getElementById('skyCard');
+  let cardFor = null;
+  function updateCard() {
+    const o = guideHover || guidePinned;
+    const h = o && guideHits.find(g => g.o === o);
+    if (!S.guide || !h) { skyCard.hidden = true; cardFor = null; return; }
+    if (cardFor !== o) {
+      cardFor = o;
+      const v = o.v, alt = Math.asin(clamp(v[2], -1, 1)) / DEG;
+      const az = ((Math.atan2(v[0], v[1]) / DEG) + 360) % 360;
+      const where = o.kind === 'deep' ? `${o.s}` : o.c;
+      skyCard.innerHTML = `<h2></h2><div class="kind"></div><dl>
+        <dt>Distance</dt><dd>${fmtLy(o.d)}</dd>
+        <dt>Brightness</dt><dd>magnitude ${o.m.toFixed(1)}${o.m > lmNow ? ' · too faint for this sky' : ''}</dd>
+        <dt>Position</dt><dd>${Math.round(alt)}° up, ${COMPASS[Math.round(az / 45) % 8]} (${Math.round(az)}°)</dd>
+        </dl><p></p>`;
+      skyCard.querySelector('h2').textContent = o.n;
+      skyCard.querySelector('.kind').textContent = `${o.t} · ${where}`;
+      skyCard.querySelector('p').textContent = o.i;
+      skyCard.hidden = false;
+    }
+    const cw = skyCard.offsetWidth, ch = skyCard.offsetHeight;
+    let x = h.x + 18, y = h.y + 14;
+    if (x + cw > W - 12) x = h.x - cw - 18;
+    if (y + ch > H - 12) y = H - ch - 12;
+    skyCard.style.left = `${Math.max(12, x)}px`;
+    skyCard.style.top = `${Math.max(12, y)}px`;
+  }
+
   // Composite the meteor layer with a soft bloom, as bright light scatters in the eye.
   function compositeMeteors() {
     b1x.globalCompositeOperation = 'copy';
@@ -845,6 +938,7 @@
       ctx.globalCompositeOperation = 'source-over';
     }
     drawRadiant();
+    drawGuide();
 
     if (now - lastHud > 250) { updateHud(); lastHud = now; }
   }
@@ -857,7 +951,7 @@
     rate: $('rate'), rateNum: $('rateNum'), rateOut: $('rateOut'), compare: $('compare'),
     presets: $('presets'), presetNote: $('presetNote'), showerSeg: $('showerSeg'), showerNote: $('showerNote'),
     lm: $('lm'), lmOut: $('lmOut'), fov: $('fov'), fovOut: $('fovOut'),
-    timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'), showComet: $('showComet'),
+    timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'), showComet: $('showComet'), showGuide: $('showGuide'),
     stSeen: $('stSeen'), stFire: $('stFire'), stNow: $('stNow'), stTime: $('stTime'),
   };
 
@@ -1014,6 +1108,8 @@
     S.mode = b.dataset.m; setSeg(el.modeSeg, 'm', S.mode); resetSeen();
   });
   el.showRadiant.addEventListener('change', () => { S.showRadiant = el.showRadiant.checked; });
+  const setGuide = on => { S.guide = el.showGuide.checked = on; if (!on) guidePinned = guideHover = null; };
+  el.showGuide.addEventListener('change', () => setGuide(el.showGuide.checked));
   const setComet = on => { S.comet = el.showComet.checked = on; skyDirty = true; };
   el.showComet.addEventListener('change', () => setComet(el.showComet.checked));
   $('findComet').addEventListener('click', () => {
@@ -1054,7 +1150,7 @@
       return;
     }
     canvas.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
     canvas.classList.add('dragging');
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -1063,7 +1159,13 @@
   });
   canvas.addEventListener('pointermove', e => {
     const prev = pointers.get(e.pointerId);
-    if (!prev) return;
+    if (!prev) {
+      if (S.guide && e.pointerType === 'mouse') {
+        const o = guideAt(e.clientX, e.clientY);
+        if (o !== guideHover) { guideHover = o; canvas.style.cursor = o ? 'pointer' : ''; }
+      }
+      return;
+    }
     if (pointers.size === 1) {
       cam.yaw -= (e.clientX - prev.x) / focal;
       cam.pitch += (e.clientY - prev.y) / focal;
@@ -1077,6 +1179,10 @@
     }
   });
   const endPointer = e => {
+    const p = pointers.get(e.pointerId);
+    if (S.guide && p && e.type === 'pointerup' && pointers.size === 1 && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 6) {
+      guidePinned = guideAt(e.clientX, e.clientY);
+    }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
     if (!pointers.size) canvas.classList.remove('dragging');
@@ -1097,6 +1203,7 @@
     else if (k === 'h') setPanel(document.body.classList.contains('ui-hidden'));
     else if (k === 'z') document.body.classList.toggle('zen');
     else if (k === 'c') setComet(!S.comet);
+    else if (k === 'i') setGuide(!S.guide);
     else if (k === 'f') $('fullscreen').click();
     else if (k === 'arrowleft') { cam.yaw -= 5 * DEG; updateCam(); }
     else if (k === 'arrowright') { cam.yaw += 5 * DEG; updateCam(); }

@@ -27,7 +27,9 @@
   <div class="hud-seen"><span class="dot"></span><span id="hudSeen">Counting…</span></div>
 </div>
 
-<div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · H hide panel</div>
+<div id="skyCard" hidden role="status" aria-live="polite"></div>
+
+<div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · I sky guide · H hide panel</div>
 
 <button id="openPanel" class="chip" type="button">Controls</button>
 
@@ -91,6 +93,7 @@
       <button type="button" data-m="view">Just this view</button>
     </div>
     <label class="check"><input type="checkbox" id="showRadiant"> Show the radiant</label>
+    <label class="check"><input type="checkbox" id="showGuide"> Sky guide: name stars and objects (I)</label>
   </section>
 
   <section>
@@ -127,6 +130,7 @@
 </aside>
 
 <script src="skygl.js"></script>
+<script src="skyinfo.js"></script>
 <script src="sim.js"></script>
 </body>
 </html>
