@@ -305,7 +305,8 @@
       .then(() => {
         skyReady = true; skyDirty = true;
         document.body.classList.add('real-sky');
-        if (big) return sky.load('assets/starmap_8k.jpg');
+        if (big) return sky.load('assets/starmap_8k.jpg')
+          .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
       })
       .catch(err => console.warn('Star map unavailable, using the generated sky.', err));
   }
@@ -1023,6 +1024,38 @@
   // ---- Sky guide: names of stars, star systems, deep-sky objects and constellations
   const INFO = window.SKY_INFO || { stars: [], deep: [], constellations: [] };
   const HR = TAU / 24;
+  function drawConstellationLines() {
+    if (!el.showLines.checked) return;
+    const lst = lstNow();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(151,188,234,0.44)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const path of window.CONSTELLATION_LINES) {
+      let previous = null;
+      for (const [ra, dec] of path) {
+        const current = eqToHor(ra * DEG, dec * DEG, lst);
+        if (previous) {
+          // Clip against the camera plane before the perspective divide.
+          let a = previous, b = current;
+          const za = dot(a, F), zb = dot(b, F), near = 0.031;
+          if (za >= near || zb >= near) {
+            if (za < near || zb < near) {
+              const t = (near - za) / (zb - za);
+              const cut = a.map((v, i) => v + t * (b[i] - v));
+              if (za < near) a = cut;
+              else b = cut;
+            }
+            ctx.moveTo(...project(a));
+            ctx.lineTo(...project(b));
+          }
+        }
+        previous = current;
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
   const guideItems = [
     ...INFO.stars.map(o => ({ ...o, kind: 'star' })),
     ...INFO.deep.map(o => ({ ...o, kind: 'deep' })),
@@ -1035,21 +1068,24 @@
   }
   function drawGuide() {
     guideHits = [];
-    if (!S.guide) return;
+    const linesVisible = el.showLines.checked;
+    if (!S.guide && !linesVisible) return;
     const lst = lstNow();
     const narrow = cam.fov < 70 * DEG;
     ctx.save();
     ctx.textAlign = 'center';
     // constellations, faint and spaced out
     ctx.font = '400 11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(155,180,230,0.42)';
-    for (const c of INFO.constellations) {
+    ctx.fillStyle = linesVisible ? 'rgba(185,210,248,0.85)' : 'rgba(155,180,230,0.42)';
+    for (const c of (linesVisible ? window.CONSTELLATION_LABELS : INFO.constellations)) {
       const v = eqToHor(c.ra * HR, c.dec * DEG, lst);
       if (v[2] < 0.03) continue;
+      if (Math.asin(v[2]) <= terrainAt(azOf(v)) * DEG) continue;
       const p = project(v);
       if (!p || !onScreen(p, -10)) continue;
       ctx.fillText(c.n.toUpperCase().split('').join('\u200A'), p[0], p[1]);
     }
+    if (!S.guide) { ctx.restore(); return; }
     for (const o of guideItems) {
       const v = eqToHor(o.ra * HR, o.dec * DEG, lst);
       o.v = v;
@@ -1244,6 +1280,7 @@
       drawBrightStars(realT);
     }
     ctx.globalCompositeOperation = 'source-over';
+    drawConstellationLines();
     drawAurora();
     drawSunMoon();
     drawLayers(dt);
@@ -1285,7 +1322,7 @@
     timeSeg: $('timeSeg'), modeSeg: $('modeSeg'), showRadiant: $('showRadiant'), showComet: $('showComet'), showGuide: $('showGuide'),
     site: $('site'), lat: $('lat'), lon: $('lon'), geo: $('geo'), locOut: $('locOut'), siteNote: $('siteNote'),
     date: $('date'), tod: $('tod'), todOut: $('todOut'), now: $('nowBtn'), sunNote: $('sunNote'), hudClock: $('hudClock'),
-    showTent: $('showTent'), showCardinals: $('showCardinals'),
+    showTent: $('showTent'), showCardinals: $('showCardinals'), showLines: $('showLines'),
     stSeen: $('stSeen'), stFire: $('stFire'), stNow: $('stNow'), stTime: $('stTime'),
   };
 
@@ -1657,19 +1694,10 @@
   $('closePanel').addEventListener('click', () => setPanel(false));
   $('openPanel').addEventListener('click', () => setPanel(true));
 
-  // intro card
-  const intro = $('intro');
-  const dismissIntro = () => { if (intro) intro.classList.add('gone'); };
-  if (intro) {
-    setTimeout(dismissIntro, 5500);
-    intro.addEventListener('transitionend', () => { if (intro.classList.contains('gone')) intro.remove(); });
-  }
-
   // ---- looking around
   const pointers = new Map();
   let pinch = null;
   canvas.addEventListener('pointerdown', e => {
-    dismissIntro();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if ((e.shiftKey || e.altKey) && S.shower !== 'sporadic') {
       const v = unproject(e.clientX, e.clientY);
@@ -1730,7 +1758,6 @@
     if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'date')) return;
     if (e.target instanceof HTMLSelectElement) return;
     const k = e.key.toLowerCase();
-    dismissIntro();
     if (k === ' ') { e.preventDefault(); setTime(S.timeScale === 0 ? lastSpeed : 0); }
     else if (k === 'h') setPanel(document.body.classList.contains('ui-hidden'));
     else if (k === 'z') document.body.classList.toggle('zen');

@@ -15,12 +15,6 @@
 <canvas id="sky" aria-label="Simulated night sky with meteors, seen from the ground"></canvas>
 <div id="vignette" aria-hidden="true"></div>
 
-<div id="intro" aria-hidden="true">
-  <div class="intro-num">44</div>
-  <div class="intro-line">meteors every second</div>
-  <div class="intro-sub">A Leonid storm before dawn, from a dark field far from town. Look up.</div>
-</div>
-
 <div id="hud">
   <div class="hud-rate"><span id="hudBig">44</span><span id="hudUnit">meteors / second</span></div>
   <div class="hud-sub" id="hudSub"></div>
@@ -85,6 +79,7 @@
     </div>
     <label class="check"><input type="checkbox" id="showRadiant"> Show the radiant</label>
     <label class="check"><input type="checkbox" id="showGuide"> Sky guide: name stars and objects (I)</label>
+    <label class="check"><input type="checkbox" id="showLines"> Constellation lines and names</label>
   </section>
   </details>
 
@@ -190,6 +185,7 @@
 
 <script src="skygl.js"></script>
 <script src="skyinfo.js"></script>
+<script src="constellation-lines.js"></script>
 <script src="sim.js"></script>
 <script src="impacts.js"></script>
 </body>

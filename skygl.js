@@ -121,10 +121,20 @@ void main() {
     return sh;
   }
 
-  async function decode(url) {
+  async function fetchMap(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    const blob = await res.blob();
+    return res.blob();
+  }
+
+  async function decode(url) {
+    let blob;
+    try {
+      blob = await fetchMap(url);
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 750));
+      blob = await fetchMap(url);
+    }
     if (window.createImageBitmap) {
       try {
         return await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
@@ -173,22 +183,32 @@ void main() {
     async function load(url) {
       const img = await decode(url);
       const t = gl.createTexture();
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      if (aniso) {
-        gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT,
-          Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+      const width = img.width;
+      try {
+        if (!t) throw new Error('Unable to allocate sky texture');
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if (aniso) {
+          gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT,
+            Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+        }
+        const error = gl.getError();
+        if (error !== gl.NO_ERROR) throw new Error(`Sky texture upload failed (${error})`);
+      } catch (error) {
+        gl.deleteTexture(t);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        throw error;
+      } finally {
+        if (img.close) img.close();
       }
-      const width = img.width || 0;
-      if (img.close) img.close();
       if (tex) gl.deleteTexture(tex);
       tex = t; texSize = width;
     }
