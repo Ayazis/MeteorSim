@@ -1132,6 +1132,46 @@
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
 
+  // Project adjoining vertical slices so the curtain stays fixed to the horizon as the camera turns.
+  function drawAurora() {
+    const activity = S.aurora;
+    if (!activity || sunAltDeg >= -3) return;
+    const pole = LAT < 0 ? Math.PI : 0;
+    const visibility = activity * (1 - smooth(-16, -3, sunAltDeg)) * (0.3 + 0.7 * smooth(2, 7, S.lm));
+    const phase = simT * 0.14;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let layer = 0; layer < 2; layer++) {
+      let lastBase, lastTop;
+      for (let i = -156; i <= 156; i++) {
+        const a = i * 0.75 * DEG;
+        const fold = Math.sin(4 * a + phase + layer) + 0.4 * Math.sin(11 * a - phase);
+        const base = (7 + layer * 9 + activity * 12 + 4 * fold) * DEG;
+        const height = (8 + activity * 16 + 4 * Math.sin(5 * a + phase)) * DEG;
+        const b = project(dir(pole + a, base))?.slice();
+        const t = project(dir(pole + a + 0.045 * fold, base + height))?.slice();
+        if (b && t && lastBase && lastTop &&
+            Math.max(b[0], t[0], lastBase[0], lastTop[0]) >= 0 &&
+            Math.min(b[0], t[0], lastBase[0], lastTop[0]) <= W) {
+          const rays = 0.65 + 0.22 * Math.sin(61 * a + 3 * fold) + 0.13 * Math.sin(97 * a - phase);
+          ctx.globalAlpha = visibility * rays * (1 - smooth(0.8, 2.04, Math.abs(a))) / (1 + layer);
+          const g = ctx.createLinearGradient(b[0], b[1], t[0], t[1]);
+          g.addColorStop(0, 'rgba(42,225,109,0)');
+          g.addColorStop(0.09, 'rgba(74,248,129,0.72)');
+          g.addColorStop(0.4, 'rgba(49,190,142,0.36)');
+          g.addColorStop(0.78, 'rgba(152,85,173,0.17)');
+          g.addColorStop(1, 'rgba(152,85,173,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(...lastBase); ctx.lineTo(...b); ctx.lineTo(...t); ctx.lineTo(...lastTop);
+          ctx.closePath(); ctx.fill();
+        }
+        lastBase = b; lastTop = t;
+      }
+    }
+    ctx.restore();
+  }
+
   function renderSky() {
     const col = skyColors();
     sky.render({
@@ -1204,6 +1244,7 @@
       drawBrightStars(realT);
     }
     ctx.globalCompositeOperation = 'source-over';
+    drawAurora();
     drawSunMoon();
     drawLayers(dt);
 
@@ -1531,6 +1572,13 @@
     }, () => { el.geo.textContent = 'Location unavailable'; setTimeout(() => { el.geo.textContent = 'Use my location'; }, 2500); },
     { maximumAge: 600000, timeout: 15000 });
   });
+  const aurora = $('aurora');
+  function updateAurora() {
+    S.aurora = Number(aurora.value) / 100;
+    $('auroraOut').value = S.aurora ? aurora.value + '%' : 'Off';
+  }
+  aurora.addEventListener('input', updateAurora);
+  updateAurora();
   el.showTent.addEventListener('change', () => { S.tent = el.showTent.checked; skyDirty = true; });
   el.showCardinals.addEventListener('change', () => { S.cardinals = el.showCardinals.checked; });
 
@@ -1555,6 +1603,57 @@
     else document.documentElement.requestFullscreen?.();
   });
   const setPanel = open => document.body.classList.toggle('ui-hidden', !open);
+  const fold = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const catalogue = [...guideItems, ...INFO.constellations].map(object => {
+    const detail = [object.t || 'Constellation', object.s || object.c].filter(Boolean).join(' · ');
+    return { object, detail, name: fold(object.n), search: fold([object.n, detail, object.i].join(' ')) };
+  });
+  const search = $('gotoSearch');
+  const results = $('gotoResults');
+  function goToObject(object) {
+    const v = eqToHor(object.ra * HR, object.dec * DEG, lstNow());
+    const altitude = Math.asin(clamp(v[2], -1, 1));
+    if (altitude < 0) {
+      $('gotoStatus').textContent = `${object.n} is ${Math.abs(altitude / DEG).toFixed(1)}° below the horizon at this place and time.`;
+      return;
+    }
+    cam.yaw = azOf(v);
+    cam.pitch = altitude;
+    updateCam();
+    setGuide(true);
+    guideHover = null;
+    guidePinned = object.kind ? object : null;
+    $('gotoStatus').textContent = `Viewing ${object.n}.`;
+    setPanel(false);
+    $('openPanel').focus();
+  }
+  function renderCatalogue() {
+    const query = fold(search.value);
+    const matches = catalogue.filter(entry => entry.search.includes(query));
+    const rank = entry => entry.name === query ? 0 : entry.name.startsWith(query) ? 1 : 2;
+    matches.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    results.replaceChildren();
+    for (const {object, detail} of matches) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = object.n;
+      const small = document.createElement('small');
+      small.textContent = detail;
+      button.append(small);
+      button.onclick = () => goToObject(object);
+      results.append(button);
+    }
+    results.scrollTop = 0;
+    $('gotoStatus').textContent = matches.length ? '' : 'No matching sky objects.';
+  }
+  search.addEventListener('input', renderCatalogue);
+  search.addEventListener('keydown', e => {
+    if (e.key === 'Enter') results.firstElementChild?.click();
+    if (e.key === 'ArrowDown') { e.preventDefault(); results.firstElementChild?.focus(); }
+  });
+  $('gotoMenu').addEventListener('toggle', () => {
+    if ($('gotoMenu').open) { renderCatalogue(); search.focus(); }
+  });
   $('closePanel').addEventListener('click', () => setPanel(false));
   $('openPanel').addEventListener('click', () => setPanel(true));
 
@@ -1627,6 +1726,7 @@
   }, { passive: false });
 
   window.addEventListener('keydown', e => {
+    if (e.target === search || (e.key === ' ' && e.target.closest?.('button, summary'))) return;
     if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'date')) return;
     if (e.target instanceof HTMLSelectElement) return;
     const k = e.key.toLowerCase();

@@ -465,3 +465,14 @@ input.tod { margin-top: 10px; }
 @media (max-width: 700px) {
   #compass { top: 136px; bottom: auto; left: 16px; width: 200px; }
 }
+
+.control-group { margin-bottom: 12px; }
+.control-group > summary { padding: 6px 0; font-size: 14px; color: var(--text); font-weight: 500; }
+#gotoSearch { margin: 8px 0; }
+.goto-results { max-height: 29vh; overflow-y: auto; }
+.goto-results button {
+  display: block; width: 100%; padding: 7px 9px; background: transparent;
+  color: var(--text); border: 0; text-align: left; font: inherit; cursor: pointer;
+}
+.goto-results button:hover, .goto-results button:focus-visible { background: var(--accent-bg); }
+.goto-results small { display: block; color: var(--muted); }
