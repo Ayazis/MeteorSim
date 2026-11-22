@@ -2,6 +2,7 @@
  * position, size and orientation, and faded in as you zoom toward them. Each has a small version that
  * loads when the object first gets big enough to notice, and a 2048 px version once it fills the view.
  * Photos: ESO and NOIRLab/NSF/AURA, CC BY 4.0 (credit lines below are shown on screen while in view).
+ * Nothing loads until the sharpest star map is in, so photos never sit over the generated or 4K sky.
  * Backgrounds were set to black and edges feathered, so a photo adds onto the sky like light. */
 (function () {
   const OBJECTS = [
@@ -89,7 +90,8 @@
     MS.addLayer((ctx, dt, ms) => {
       const view = ms.getView(), fovDeg = view.fov / DEG;
       const shown = [];
-      if (fovDeg < 60) {
+      // Photos sit on top of the high-resolution star map only: nothing is fetched or drawn before it is in.
+      if (fovDeg < 60 && ms.skyFull) {
         const day = ms.getPollution().day;
         const lst = ms.getObserver().lst;
         for (const o of OBJECTS) {

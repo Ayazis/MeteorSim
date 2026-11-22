@@ -1937,9 +1937,14 @@
    *                      (transform set to CSS pixels), after the sky, Sun and Moon and before the meteors
    *                      and the landscape. dt is simulated seconds since the last frame (meteor clock).
    *   setLocation({ name, lat, lon, tz }), setTime(Date | ms)
+   *   realSky, skyTexture (width of the star map in use), skyFull (the sharpest star map has loaded)
    * A 'meteorsim-ready' event fires on window once this API exists.
    */
   const API = {
+    get realSky() { return !!(sky && skyReady); },
+    get skyTexture() { return sky ? sky.textureSize : 0; },
+    // true once the star map is the sharpest this device will get (8K, or 4K where 8K can't be used)
+    get skyFull() { return !!(sky && skyReady) && (sky.textureSize >= 8192 || sky.maxTexture < 8192); },
     getObserver() {
       return { name: OBS.name, lat: OBS.lat, lon: OBS.lon, tz: OBS.tz, date: new Date(clockMs), lst: lstNow(),
         sunAlt: sunAltDeg, sunAz: (((azOf(sunVec) / DEG) % 360) + 360) % 360, moonAlt: moonAltDeg,
