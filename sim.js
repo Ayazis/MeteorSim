@@ -1393,8 +1393,10 @@
       auroraVisibility: S.aurora * (1 - smooth(-16, -3, sunAltDeg)) * (0.3 + 0.7 * smooth(2, 7, S.lm)),
       exposure: 1.7,
       starBoost: 2.2,
-      // the faint end of the map sinks into a brighter sky
-      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * (REF_LM - lmNow)) - 1)),
+      // The faint end of the map sinks into a brighter sky. The map's pixel values grow more slowly
+      // than star flux, so the cut has to rise faster than the sky (exponent 1.35, fitted so that a
+      // Bortle 9 sky shows only stars to about magnitude 3.3).
+      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * 1.35 * (REF_LM - lmNow)) - 1)),
       pollution: col.t,
       domeAz: DOME_AZ,
       zen: toLinear(col.zen), hor: toLinear(col.hor), dome: toLinear(col.dome), ground: toLinear(col.ground),
