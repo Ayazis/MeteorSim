@@ -1,0 +1,461 @@
+:root {
+  --panel: rgba(8, 11, 20, 0.72);
+  --line: rgba(160, 190, 255, 0.12);
+  --text: #e3e9f3;
+  --muted: #8f9bb1;
+  --faint: #5f6b82;
+  --accent: #9bd7ff;
+  --accent-bg: rgba(155, 215, 255, 0.15);
+  --seen: #7dffb2;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #03050a;
+  color: var(--text);
+  font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+#sky, #skygl {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: block;
+}
+#sky { cursor: grab; touch-action: none; }
+#sky.dragging { cursor: grabbing; }
+#skygl { opacity: 0; transition: opacity 1.6s ease; }
+body.real-sky #skygl { opacity: 1; }
+
+/* a soft lens vignette */
+#vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 95% at 50% 42%, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #skygl { transition: none; animation: none; }
+}
+
+/* ---------- HUD ---------- */
+#hud { display: none;
+  position: fixed;
+  left: 24px;
+  top: 20px;
+  max-width: calc(100vw - 48px);
+  pointer-events: none;
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.95);
+  transition: opacity 0.3s;
+}
+.hud-rate { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#hudBig {
+  font-size: 60px;
+  font-weight: 250;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+#hudUnit { font-size: 16px; color: var(--muted); }
+.hud-sub { margin-top: 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hud-seen {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.hud-seen .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--seen);
+  box-shadow: 0 0 8px var(--seen);
+  flex: none;
+}
+
+#hint {
+  position: fixed;
+  left: 24px;
+  bottom: 18px;
+  right: 360px;
+  color: var(--faint);
+  font-size: 12px;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+body.ui-hidden #hint { right: 24px; }
+body.zen #hud, body.zen #hint, body.zen #openPanel { opacity: 0; pointer-events: none; }
+
+/* ---------- Panel ---------- */
+#panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 320px;
+  overflow-y: auto;
+  padding: 18px 18px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  scrollbar-width: thin;
+}
+body.ui-hidden #panel {
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+h1 { font-size: 16px; font-weight: 600; margin: 0; }
+.lede { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+
+section { padding: 14px 0; border-top: 1px solid var(--line); }
+.panel-head + section { border-top: 0; margin-top: 4px; }
+
+.label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.label output {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+.scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.rate-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+.rate-row input {
+  width: 96px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.preset {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.preset b { display: block; font-size: 13px; font-weight: 560; }
+.preset span { font-size: 11.5px; color: var(--muted); }
+.preset:hover { background: rgba(255, 255, 255, 0.08); }
+.preset.active { border-color: var(--accent); background: var(--accent-bg); }
+.preset-group {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.preset-group:first-child { margin-top: 0; }
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.seg button {
+  flex: 1;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.seg button:hover { color: var(--text); }
+.seg button.active { background: var(--accent-bg); color: var(--text); }
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 0 30%; }
+
+.check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+.chip {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.chip:hover { background: rgba(40, 50, 70, 0.85); }
+.chip.wide { width: 100%; }
+
+.icon-btn {
+  width: 28px; height: 28px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.icon-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+
+.link-btn {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+#openPanel { position: fixed; top: 16px; right: 16px; display: none; }
+body.ui-hidden #openPanel { display: flex; }
+.menu-btn { width: 44px; height: 44px; padding: 0; align-items: center; justify-content: center; }
+
+details { border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+details ul { margin: 10px 0 0; padding-left: 18px; }
+details li { margin-bottom: 6px; font-size: 12.5px; color: var(--muted); }
+details em { color: var(--text); font-style: normal; }
+.credit { margin: 10px 0 4px; font-size: 11.5px; color: var(--faint); }
+.credit a { color: var(--muted); }
+
+button:focus-visible, input:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  #hud { left: 16px; top: 14px; max-width: calc(100vw - 32px); }
+  #hudBig { font-size: 40px; }
+  #hudUnit { font-size: 14px; }
+  #hint { display: none; }
+  #panel {
+    top: auto;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    width: auto;
+    max-height: 62vh;
+  }
+  body.ui-hidden #panel { transform: translateY(calc(100% + 24px)); }
+  #openPanel { top: auto; bottom: 16px; right: 16px; }
+}
+
+/* ---------- Sky guide ---------- */
+#skyCard {
+  position: fixed;
+  z-index: 5;
+  max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.45;
+  pointer-events: auto;   /* hoverable, so its links can be clicked */
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+#skyCard h2 { margin: 0 0 2px; font-size: 15px; font-weight: 500; }
+#skyCard .kind { color: var(--accent); font-size: 12px; margin-bottom: 6px; }
+#skyCard p { margin: 6px 0 0; color: var(--muted); }
+#skyCard dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0 0; }
+#skyCard dt { color: var(--faint); }
+#skyCard dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* ---------- Famous impacts (impacts.js) ---------- */
+#impacts {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  pointer-events: none;
+}
+.impact-list { display: grid; gap: 4px; }
+.impact-list button {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text); font: inherit; font-size: 13px; text-align: left;
+  cursor: pointer;
+}
+.impact-list button small { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
+.impact-list button:hover { background: rgba(255, 255, 255, 0.07); }
+.impact-list button[aria-pressed="true"] { background: var(--accent-bg); border-color: rgba(155, 215, 255, 0.35); }
+#impactCard {
+  position: fixed; left: 24px; bottom: 24px; z-index: 20;
+  width: 340px; max-width: calc(100vw - 32px); max-height: calc(100vh - 140px); overflow: auto;
+  padding: 16px 18px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+#impactCard[hidden] { display: none; }
+#impactCard .ic-head { display: flex; justify-content: space-between; gap: 12px; }
+#impactCard h2 { margin: 2px 0 10px; font-size: 18px; font-weight: 500; }
+#impactCard .ic-kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+#impactCard .ic-view { font-size: 12px; color: var(--faint); margin: 6px 0 12px; }
+#impactCard .ic-actions { display: flex; gap: 8px; }
+#impactCaption {
+  position: fixed; left: 50%; top: 18%; z-index: 19; transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px)); padding: 8px 16px; border-radius: 10px;
+  background: rgba(3, 5, 10, 0.55); color: var(--text); font-size: 15px; font-weight: 300; text-align: center;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
+  opacity: 0; transition: opacity 0.8s ease; pointer-events: none;
+}
+#impactCaption.show { opacity: 1; }
+@media (max-width: 700px) {
+  #impactCard { left: 16px; right: 16px; top: 16px; bottom: auto; width: auto; max-height: 45vh; }
+}
+/* ---------- end Famous impacts ---------- */
+
+/* ---------- Compass, location and clock ---------- */
+#compass {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.95);
+  transition: opacity 0.3s;
+}
+#compassTape {
+  display: block;
+  width: 100%;
+  height: 30px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.compass-read { margin-top: 2px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.compass-clock { margin-top: 1px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+body.zen #compass { opacity: 0; }
+@media (max-width: 1100px) {
+  #compass { top: auto; bottom: 64px; left: 24px; transform: none; width: 220px; text-align: left; }
+}
+
+.field {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.field.wide { width: 100%; }
+select.field option, select.field optgroup { background: #0d1220; color: var(--text); }
+.rate-row.coords { flex-wrap: wrap; gap: 6px 10px; }
+.rate-row.coords label { display: flex; align-items: center; gap: 5px; }
+.rate-row.coords input { width: 82px; }
+.rate-row .chip { padding: 6px 12px; }
+input.tod { margin-top: 10px; }
+.speeds button { flex: 1 0 22%; }
+
+/* Touch screens: no keyboard hint, so the compass sits in the corner. */
+@media (pointer: coarse) {
+  #hint { display: none; }
+  #compass { bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+}
+/* Phones upright: the compass stays at the bottom-left, clear of the menu button on the right. */
+@media (max-width: 700px) {
+  #compass { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); left: 16px; width: 200px; }
+}
+
+.control-group { margin-bottom: 12px; }
+.control-group > summary { padding: 6px 0; font-size: 14px; color: var(--text); font-weight: 500; }
+#gotoSearch { margin: 8px 0; }
+.goto-results { max-height: 29vh; overflow-y: auto; }
+.goto-results button {
+  display: block; width: 100%; padding: 7px 9px; background: transparent;
+  color: var(--text); border: 0; text-align: left; font: inherit; cursor: pointer;
+}
+.goto-results button:hover, .goto-results button:focus-visible { background: var(--accent-bg); }
+.goto-results small { display: block; color: var(--muted); }
+.res-info { opacity: 0.7; }
+.dso-credit { position: fixed; right: 12px; bottom: 30px; max-width: min(60vw, 640px); font-size: 11px; line-height: 1.35;
+  color: rgba(220, 228, 240, 0.65); text-align: right; pointer-events: none; z-index: 5; }
+.dso-credit[hidden] { display: none; }
+@media (max-width: 700px) {
+  .dso-credit { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; left: 16px; right: 16px; max-width: none; text-align: left; }
+}
+#skyCard .photo-src { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11.5px; }
+#skyCard .photo-src a { color: var(--accent); pointer-events: auto; }
+/* Subsections inside a control group (Simulations → Meteors, Scenarios, Aurora...) */
+.sub-group { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.sub-group > summary { padding: 4px 0 4px 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+.sub-group > section { padding-left: 12px; }
+.search-head { align-items: center; margin-bottom: 4px; }
+.search-head .field { flex: 1; font-size: 14px; padding: 8px 10px; }
+.goto-results[hidden] { display: none; }
+#gotoStatus:empty { display: none; }
+/* long press on the sky opens the sky guide, not the browser's callout or text selection */
+#sky { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+#skyCard .zoom-link { color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer; }
