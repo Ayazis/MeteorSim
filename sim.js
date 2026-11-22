@@ -1339,23 +1339,41 @@
       skyCard.querySelector('.track-btn').textContent = tracked === o ? 'Stop tracking' : 'Start tracking';
     }
     const cw = skyCard.offsetWidth, ch = skyCard.offsetHeight;
-    // While tracking, the object sits at the centre: pin the card to a fixed spot so it doesn't jitter.
-    const ax = tracked === o ? W / 2 : h.x, ay = tracked === o ? H / 2 : h.y;
-    let x = Math.round(ax + 18), y = Math.round(ay + 14);
-    // On a narrow screen, put the tracked object's card at the bottom, clear of the object.
-    if (tracked === o && W <= 700) { x = 16; y = H; }
-    if (x + cw > W - 12) x = Math.round(ax - cw - 18);
+    // While tracking, the object sits at the centre: anchor there so the card doesn't jitter.
+    const isT = tracked === o;
+    const ax = isT ? W / 2 : h.x, ay = isT ? H / 2 : h.y;
+    // The free area: the screen minus the side panel and the speed bar.
+    let left = 12, right = W - 12, top = 12, floor = H - 12;
+    const pr = document.body.classList.contains('ui-hidden') ? null : document.getElementById('panel')?.getBoundingClientRect();
+    if (pr && pr.width && pr.height) {
+      if (pr.left > W / 2) right = Math.min(right, pr.left - 12);
+      else if (pr.top > H / 2) floor = Math.min(floor, pr.top - 12);
+    }
+    // The compass readout sits at the bottom on phones: keep the card above it there.
+    const cr = document.getElementById('compass')?.getBoundingClientRect();
+    if (cr && cr.height && cr.top > H / 2) floor = Math.min(floor, cr.top - 8);
     const tbr = trackBar.hidden ? null : trackBar.getBoundingClientRect();
-    const floor = tbr && tbr.top > H / 2 ? tbr.top - 12 : H - 12;   // stay above the speed bar at the bottom
-    const ceil = tbr && tbr.top <= H / 2 ? tbr.bottom + 12 : 12;    // or below it when it is at the top (phones)   // stay above the tracking bar
-    if (y + ch > floor) y = floor - ch;
+    if (tbr) { if (tbr.top > H / 2) floor = Math.min(floor, tbr.top - 12); else top = Math.max(top, tbr.bottom + 12); }
+    // Keep clear of the object itself (the Moon's disc can be large when zoomed in).
+    const r = (o === MOON_ITEM ? Math.max(9, 0.27 * DEG * focal + 4) : 10) + 14;
+    const fitsX = x => x >= left && x + cw <= right, fitsY = y => y >= top && y + ch <= floor;
+    const clampY = y => Math.max(top, Math.min(y, floor - ch));
+    const clampX = x => Math.max(left, Math.min(x, right - cw));
+    const sideY = clampY(isT ? ay - ch / 2 : ay - 24);
+    const spots = [
+      [ax + r, sideY],                       // right of it
+      [ax - r - cw, sideY],                  // left of it
+      [clampX(ax - cw / 2), ay + r],         // below
+      [clampX(ax - cw / 2), ay - r - ch],    // above
+    ];
+    let [x, y] = spots.find(([sx, sy]) => fitsX(sx) && fitsY(sy)) || [clampX(ax - cw / 2), floor - ch];
     // While tracking, hold the card still: only move it if it would no longer fit.
-    if (tracked === o) {
-      if (cardPin && cardPin.o === o && cardPin.W === W && cardPin.H === H && cardPin.y + ch <= floor) { x = cardPin.x; y = cardPin.y; }
-      else cardPin = { o, W, H, x, y: Math.max(12, Math.min(y, floor - ch - 40)) }, y = cardPin.y;
+    if (isT) {
+      if (cardPin && cardPin.o === o && cardPin.key === `${W}|${H}|${left}|${right}|${top}|${floor}|${Math.round(r)}` && fitsY(cardPin.y)) { x = cardPin.x; y = cardPin.y; }
+      else cardPin = { o, x, y, key: `${W}|${H}|${left}|${right}|${top}|${floor}|${Math.round(r)}` };
     } else cardPin = null;
-    skyCard.style.left = `${Math.max(12, x)}px`;
-    skyCard.style.top = `${Math.max(ceil, y)}px`;
+    skyCard.style.left = `${Math.round(Math.max(12, x))}px`;
+    skyCard.style.top = `${Math.round(Math.max(12, y))}px`;
   }
 
   // Composite the meteor layer with a soft bloom, as bright light scatters in the eye.
