@@ -348,15 +348,8 @@
   // When the page is shown again, or on a slow heartbeat, a context that stays dead for a
   // moment is replaced: a fresh canvas, a fresh renderer, and the star map loaded again
   // (from the browser cache, so it is quick).
-  let deadSince = 0;
-  function checkSky() {
-    if (!sky || document.hidden) { deadSince = 0; return; }
-    if (!sky.lost) { deadSince = 0; return; }
-    const now = performance.now();
-    if (!deadSince) { deadSince = now; return; }
-    if (now - deadSince < 1200) return;
-    deadSince = 0;
-    console.warn('WebGL context did not come back: rebuilding the sky.');
+  function rebuildSky(why) {
+    console.warn(`Rebuilding the WebGL sky: ${why}.`);
     sky.dispose();
     const fresh = glCanvas.cloneNode(false);
     fresh.width = glCanvas.width; fresh.height = glCanvas.height;
@@ -365,7 +358,26 @@
     skyLost();
     startSky();
   }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkSky(); setTimeout(checkSky, 1300); } });
+  let deadSince = 0;
+  function checkSky() {
+    if (!sky || document.hidden) { deadSince = 0; return; }
+    if (!sky.lost) { deadSince = 0; return; }
+    const now = performance.now();
+    if (!deadSince) { deadSince = now; return; }
+    if (now - deadSince < 1200) return;
+    deadSince = 0;
+    rebuildSky('the context did not come back');
+  }
+  // Phones can also drop the star map from graphics memory while the app is in the background
+  // without reporting the context as lost, leaving a dark sky with no stars. So after the page has
+  // been hidden, the sky is always rebuilt and the map loaded again (from the browser cache).
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = performance.now(); return; }
+    if (sky && hiddenAt && performance.now() - hiddenAt > 400) rebuildSky('the page was in the background');
+    hiddenAt = 0;
+  });
+  window.addEventListener('pageshow', e => { if (e.persisted && sky) rebuildSky('restored from the back-forward cache'); });
   setInterval(checkSky, 1000);
   startSky();
 
