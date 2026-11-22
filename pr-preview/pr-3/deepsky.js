@@ -102,10 +102,35 @@
   document.body.appendChild(creditEl);
   let creditText = '';
 
+  // The object's own position from the sky catalogue (a photo's centre can sit a little off it),
+  // so the spinner lands on the sky-guide marker.
+  const catalogue = window.SKY_INFO?.deep || [];
+  function markerAt(o, ms, lst) {
+    const entry = catalogue.find(e => norm(e.s) === norm(o.code) || norm(e.n) === norm(o.name));
+    if (!entry) return null;
+    const p = ms.project(ms.eqToHor(entry.ra * 15 * DEG, entry.dec * DEG, lst));
+    return p && p.slice();
+  }
+
+  function drawSpinner(ctx, x, y) {
+    const t = performance.now() / 1000, r = 15;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,205,150,0.95)';
+    const a = t * 5;
+    ctx.beginPath(); ctx.arc(x, y, r, a, a + Math.PI * 1.3); ctx.stroke();
+    ctx.restore();
+  }
+
   function start(MS) {
     MS.addLayer((ctx, dt, ms) => {
       const view = ms.getView(), fovDeg = view.fov / DEG;
-      const shown = [];
+      const shown = [], spinners = [];
       // Photos sit on top of the high-resolution star map only: nothing is fetched or drawn before it is in.
       if (fovDeg < 60 && ms.skyFull) {
         const day = ms.getPollution().day;
@@ -134,7 +159,11 @@
           const reach = Math.hypot(right[0] * halfW, right[1] * halfW) + Math.hypot(up[0] * halfH, up[1] * halfH);
           if (p0[0] < -reach || p0[1] < -reach || p0[0] > view.width + reach || p0[1] > view.height + reach) continue;
           const widthPx = 2 * Math.hypot(right[0], right[1]) * halfW;
-          const img = (widthPx > 500 && image(o, true)) || image(o, false);
+          const wantFull = widthPx > 500;
+          const full = wantFull ? image(o, true) : null;
+          const img = full || image(o, false);
+          // Still on its way (or the sharper version is): show a small spinner on the object.
+          if (!img || (wantFull && !full)) spinners.push(markerAt(o, ms, lst) || p0.slice());
           if (!img) continue;
           const sx = 2 * halfW / img.width, sy = 2 * halfH / img.height;
           ctx.save();
@@ -146,6 +175,7 @@
           if (alpha > 0.25) shown.push(o);
         }
       }
+      for (const [x, y] of spinners) drawSpinner(ctx, x, y);
       const text = shown.length ? shown.map(o => `${o.name} (${o.code}): ${o.credit}`).join(' · ') + ' · CC BY 4.0' : '';
       if (text !== creditText) { creditText = text; creditEl.textContent = text; creditEl.hidden = !text; }
     });
