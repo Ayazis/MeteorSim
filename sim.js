@@ -1874,33 +1874,28 @@
   });
   const search = $('gotoSearch');
   const results = $('gotoResults');
-  // Smooth camera flight, eased in and out: first the view pans to the object at the current zoom,
-  // then it zooms in (on a log scale, so it feels even from 100° down to 1°), overlapping a little.
-  // Any drag, pinch or scroll stops it. With reduced motion requested it is just quicker.
+  // Smooth camera flight, eased in and out. Pan and zoom run together and end together over a
+  // fixed time, so a longer pan simply moves faster. The zoom follows a log scale (even from 100°
+  // to 1°) but never gets narrower than three times the distance still to pan (across the short side of the screen), so the object
+  // stays in view while the view turns toward it. Any drag, pinch or scroll stops the flight;
+  // with reduced motion requested it is just quicker.
   let flight = null;
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  const PAN_END = 0.6, ZOOM_START = 0.45;   // fractions of the flight
   function flyTo(target, fov) {
-    const [yaw1, pitch1] = target();
-    const dYaw = ((yaw1 - cam.yaw + 3 * Math.PI) % TAU) - Math.PI;   // the short way round
-    const pan = Math.hypot(dYaw * Math.cos(pitch1), pitch1 - cam.pitch) / DEG;
-    const zoom = Math.abs(Math.log(fov / cam.fov));
     const quick = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.5 : 1;
-    const ms = clamp(900 + pan * 10 + zoom * 350, 1000, 3000) * quick;
-    flight = { target, yaw0: cam.yaw, pitch0: cam.pitch, fov0: cam.fov, fov1: fov, t0: performance.now(), ms,
-      panOnly: zoom < 0.05, zoomOnly: pan < 0.5 };
+    flight = { target, yaw0: cam.yaw, pitch0: cam.pitch, fov0: cam.fov, fov1: fov, t0: performance.now(), ms: 1800 * quick };
   }
   function stepFlight(now) {
     if (!flight) return;
-    const f = flight, u = clamp((now - f.t0) / f.ms, 0, 1);
-    // A pure pan or pure zoom uses the whole flight; otherwise pan first, then zoom.
-    const kp = ease(f.zoomOnly ? 1 : f.panOnly ? u : clamp(u / PAN_END, 0, 1));
-    const kz = ease(f.panOnly ? 1 : f.zoomOnly ? u : clamp((u - ZOOM_START) / (1 - ZOOM_START), 0, 1));
+    const f = flight, u = clamp((now - f.t0) / f.ms, 0, 1), k = ease(u);
     const [yaw1, pitch1] = f.target();
     const dYaw = ((yaw1 - f.yaw0 + 3 * Math.PI) % TAU) - Math.PI;
-    cam.yaw = f.yaw0 + dYaw * kp;
-    cam.pitch = f.pitch0 + (pitch1 - f.pitch0) * kp;
-    cam.fov = f.fov0 * Math.pow(f.fov1 / f.fov0, kz);
+    cam.yaw = f.yaw0 + dYaw * k;
+    cam.pitch = f.pitch0 + (pitch1 - f.pitch0) * k;
+    const left = (1 - k) * Math.hypot(dYaw * Math.cos(pitch1), pitch1 - f.pitch0);   // pan still to go, radians
+    const zoomed = f.fov0 * Math.pow(f.fov1 / f.fov0, k);
+    const aspect = Math.max(W, H) / Math.max(1, Math.min(W, H));   // fov spans the long side; keep it on the short one
+    cam.fov = f.fov1 < f.fov0 ? Math.min(f.fov0, Math.max(zoomed, 3 * left * aspect)) : zoomed;
     updateCam(); syncFov();
     if (u >= 1) flight = null;
   }
