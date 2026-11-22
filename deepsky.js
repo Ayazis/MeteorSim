@@ -45,6 +45,10 @@
     {"id": "m92", "code": "M92", "name": "Globular cluster", "ra": 259.41517, "dec": 43.18862, "w": 0.4793, "h": 0.4793, "rot": 2.6, "credit": "Hillary Mathis, REU program/NOIRLab/ NSF /AURA", "src": "https://noirlab.edu/public/images/noao-m92/"}
   ];
   const DEG = Math.PI / 180;
+  // Lets the rest of the page mark objects that have a photo (a catalogue code like 'M31', or a name).
+  const norm = t => String(t || '').toLowerCase().replace(/\s+/g, '');
+  const keys = new Set(OBJECTS.flatMap(o => [norm(o.code), norm(o.name)]));
+  window.DeepSkyPhotos = { has: object => !!object && (keys.has(norm(object.s)) || keys.has(norm(object.n))), list: OBJECTS };
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
   // Small and full-size images, fetched on demand.

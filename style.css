@@ -418,8 +418,14 @@ select.field option, select.field optgroup { background: #0d1220; color: var(--t
 input.tod { margin-top: 10px; }
 .speeds button { flex: 1 0 22%; }
 
+/* Touch screens: no keyboard hint, so the compass sits in the corner. */
+@media (pointer: coarse) {
+  #hint { display: none; }
+  #compass { bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+}
+/* Phones upright: the compass goes to the top-left corner (the meteor-rate panel that used to be there is hidden). */
 @media (max-width: 700px) {
-  #compass { top: 136px; bottom: auto; left: 16px; width: 200px; }
+  #compass { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; left: 16px; width: 200px; }
 }
 
 .control-group { margin-bottom: 12px; }
@@ -436,3 +442,6 @@ input.tod { margin-top: 10px; }
 .dso-credit { position: fixed; right: 12px; bottom: 30px; max-width: min(60vw, 640px); font-size: 11px; line-height: 1.35;
   color: rgba(220, 228, 240, 0.65); text-align: right; pointer-events: none; z-index: 5; }
 .dso-credit[hidden] { display: none; }
+@media (max-width: 700px) {
+  .dso-credit { bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); left: 16px; right: 16px; max-width: none; }
+}
