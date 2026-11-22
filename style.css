@@ -459,3 +459,8 @@ input.tod { margin-top: 10px; }
 /* long press on the sky opens the sky guide, not the browser's callout or text selection */
 #sky { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
 #skyCard .zoom-link { color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer; }
+
+#skyCard .track-btn { pointer-events: auto; cursor: pointer; margin-top: 8px; font-size: 12px; padding: 4px 10px; }
+#trackBar { position: fixed; z-index: 6; left: 50%; bottom: 52px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; font-size: 13px; }
+#trackBar[hidden] { display: none; }
+#trackBar button { font: inherit; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
