@@ -1290,7 +1290,15 @@
         <dt>Position</dt><dd>${Math.round(alt)}° up, ${COMPASS[Math.round(az / 45) % 8]} (${Math.round(az)}°)</dd>
         </dl><p></p>`;
       skyCard.querySelector('h2').textContent = hasPhoto(o) ? `${o.n} *` : o.n;
-      skyCard.querySelector('.kind').textContent = `${o.t} · ${where}` + (hasPhoto(o) ? ` · ${PHOTO_NOTE}` : '');
+      const kind = skyCard.querySelector('.kind');
+      kind.textContent = `${o.t} · ${where}`;
+      if (hasPhoto(o)) {
+        // "zoom in" is a button: it flies the view in on the object so the photo shows.
+        const zoom = document.createElement('a');
+        zoom.href = '#'; zoom.className = 'zoom-link'; zoom.textContent = 'zoom in';
+        zoom.addEventListener('click', e => { e.preventDefault(); goToObject(o); });
+        kind.append(' · * Photo available: ', zoom, ' to see it');
+      }
       skyCard.querySelector('p').textContent = o.i;
       const photo = window.DeepSkyPhotos?.find(o);
       if (photo) {
