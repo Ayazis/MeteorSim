@@ -452,3 +452,7 @@ input.tod { margin-top: 10px; }
 .sub-group { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 .sub-group > summary { padding: 4px 0 4px 12px; font-size: 13px; color: var(--text); cursor: pointer; }
 .sub-group > section { padding-left: 12px; }
+.search-head { align-items: center; margin-bottom: 4px; }
+.search-head .field { flex: 1; font-size: 14px; padding: 8px 10px; }
+.goto-results[hidden] { display: none; }
+#gotoStatus:empty { display: none; }

@@ -1873,8 +1873,11 @@
     setPanel(false);
     $('openPanel').focus();
   }
+  // The list only opens once something is typed.
   function renderCatalogue() {
-    const query = fold(search.value);
+    const query = fold(search.value.trim());
+    results.hidden = !query;
+    if (!query) { results.replaceChildren(); $('gotoStatus').textContent = ''; return; }
     const matches = catalogue.filter(entry => entry.search.includes(query));
     const rank = entry => entry.name === query ? 0 : entry.name.startsWith(query) ? 1 : 2;
     matches.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
@@ -1898,9 +1901,6 @@
   search.addEventListener('keydown', e => {
     if (e.key === 'Enter') results.firstElementChild?.click();
     if (e.key === 'ArrowDown') { e.preventDefault(); results.firstElementChild?.focus(); }
-  });
-  $('gotoMenu').addEventListener('toggle', () => {
-    if ($('gotoMenu').open) { renderCatalogue(); search.focus(); }
   });
   $('closePanel').addEventListener('click', () => setPanel(false));
   $('openPanel').addEventListener('click', () => setPanel(true));
