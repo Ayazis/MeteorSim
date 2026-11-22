@@ -348,7 +348,9 @@ void main() {
     return {
       maxTexture: renderer.capabilities.maxTextureSize,
       load, render,
-      get lost() { return lost; },
+      // also catch a context that died without an event (seen after app switches on phones)
+      get lost() { return lost || renderer.getContext().isContextLost(); },
+      dispose() { try { renderer.dispose(); } catch (e) { /* context already gone */ } },
       on(event, fn) { listeners[event]?.push(fn); },
       get textureSize() { return uniforms.uSky.value?.image.width || 0; }
     };
