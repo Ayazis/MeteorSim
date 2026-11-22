@@ -312,6 +312,32 @@
       .then(() => { if (gen === skyGen) { skyDirty = true; updateResInfo(); } })
       .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
   }
+  // Supermax: the 32K map in tiles, fetched only for what is in view once the 8K map runs out of detail.
+  // On by default on large desktop screens; the choice is remembered.
+  const SUPERMAX_TILES = 'assets/sky32k';
+  function supermaxWanted() {
+    try { const v = localStorage.getItem('meteorsim.supermax'); if (v !== null) return v === '1'; } catch (e) { /* storage off */ }
+    return !matchMedia('(pointer: coarse)').matches;
+  }
+  function applySupermax() {
+    const box = document.getElementById('supermax');
+    if (!sky) return;
+    const on = box ? box.checked : supermaxWanted();
+    const gen = skyGen;
+    sky.setTiles(on ? SUPERMAX_TILES : null)
+      .then(ok => { if (gen === skyGen) { skyDirty = true; updateResInfo(); if (on && !ok) console.warn('Supermax tiles need a larger GPU texture size; keeping the 8K map.'); } })
+      .catch(err => console.warn('Supermax star map tiles unavailable.', err));
+  }
+  {
+    const box = document.getElementById('supermax');
+    if (box) {
+      box.checked = supermaxWanted();
+      box.addEventListener('change', () => {
+        try { localStorage.setItem('meteorsim.supermax', box.checked ? '1' : '0'); } catch (e) { /* storage off */ }
+        applySupermax();
+      });
+    }
+  }
   function skyLost() {
     document.body.classList.remove('real-sky');
     skyDirty = true;
@@ -328,6 +354,8 @@
       console.warn('WebGL context lost: drawing the generated sky until it comes back.');
       skyLost();
     });
+    sky.on('tile', () => { if (gen === skyGen) { skyDirty = true; updateResInfo(); } });
+    applySupermax();
     sky.on('restored', () => {
       if (gen !== skyGen) return;
       if (skyReady) document.body.classList.add('real-sky');
@@ -388,7 +416,9 @@
   function updateResInfo() {
     if (!hudRes || !resInfoReady) return;
     const f = cam.fov / DEG;
-    const stars = skyLive() ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    let stars = skyLive() ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    const ti = skyLive() ? sky.tileInfo : null;
+    if (ti && ti.wanted) stars += ` + ${kLabel(ti.width)} tiles` + (ti.ready < ti.wanted ? ` ${ti.ready}/${ti.wanted}…` : '');
     const moonTxt = kLabel(moonMap.w) + (moonMap.loading ? ` → ${kLabel(moonMap.loading)}…` : '');
     hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · star map ${stars} · Moon ${moonTxt}`;
   }
