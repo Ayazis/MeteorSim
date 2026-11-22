@@ -5,7 +5,7 @@ window.SKY_INFO = {
   stars: [
     { n: 'Sirius', c: 'Canis Major', ra: 6.752, dec: -16.716, m: -1.46, d: 8.6, t: 'Binary system', i: 'The brightest star in the night sky. A hot white star with a white-dwarf companion, Sirius B, the size of Earth.' },
     { n: 'Canopus', c: 'Carina', ra: 6.399, dec: -52.696, m: -0.74, d: 310, t: 'Bright giant', i: 'Second-brightest star. Barely visible from 45° north, it stays south of the horizon here.' },
-    { n: 'Arcturus', c: 'Boötes', ra: 14.261, dec: 19.182, m: -0.05, d: 37, t: 'Red giant', i: 'The brightest star north of the celestial equator. An old orange giant racing through the galactic disc.' },
+    { n: 'Arcturus', c: 'Boötes', ra: 14.261, dec: 19.182, m: -0.05, d: 37, t: 'Orange giant', i: 'The brightest star north of the celestial equator. An old orange giant racing through the galactic disc.' },
     { n: 'Rigil Kentaurus', c: 'Centaurus', ra: 14.660, dec: -60.834, m: -0.27, d: 4.4, t: 'Triple system', i: 'Alpha Centauri: the nearest star system to the Sun, including Proxima Centauri and its planets. Never rises from 45° north.' },
     { n: 'Vega', c: 'Lyra', ra: 18.616, dec: 38.784, m: 0.03, d: 25, t: 'Main-sequence star', i: 'Once the zero point of the magnitude scale. Surrounded by a disc of dust, and the pole star some 12,000 years from now.' },
     { n: 'Capella', c: 'Auriga', ra: 5.278, dec: 45.998, m: 0.08, d: 43, t: 'Quadruple system', i: 'Two yellow giants orbiting each other every 104 days, with a distant pair of red dwarfs.' },
