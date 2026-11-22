@@ -2,11 +2,11 @@
  * Categories are colour coded (all stars share one colour); previews are impressions, not photos. */
 (function () {
   const CATS = {
-    star:    { label: 'Star',        color: [155, 215, 255] },
-    cluster: { label: 'Star cluster', color: [255, 214, 110] },
-    nebula:  { label: 'Nebula',      color: [255, 128, 190] },
-    galaxy:  { label: 'Galaxy',      color: [185, 150, 255] },
-    hole:    { label: 'Black hole',  color: [255, 150, 80] },
+    star:    { label: 'Star',        color: [190, 225, 250] },
+    cluster: { label: 'Star cluster', color: [250, 228, 170] },
+    nebula:  { label: 'Nebula',      color: [248, 180, 210] },
+    galaxy:  { label: 'Galaxy',      color: [205, 190, 250] },
+    hole:    { label: 'Black hole',  color: [250, 195, 160] },
   };
   function category(o) {
     if (o.kind === 'star') return 'star';
@@ -79,7 +79,7 @@
     for (let i = 0; i < n + (/triple/.test(t) ? 1 : 0); i++) {
       const cc = o.n === 'Albireo' ? TINT.B : /white-dwarf|white dwarf/.test(o.i) && i === 0 ? [235, 240, 255] : TINT[['B', 'K', 'M', 'G'][Math.floor(R() * 4)]];
       const x = cx + size + 14 + i * 16, y = cy - 14 + R() * 28;
-      glow(g, Math.min(w - 8, x), y, /dwarf/.test(o.i) && i === 0 ? 6 : 9, cc);
+      glow(g, Math.min(w - 8, cx + size * 0.7 + 10 + i * 12), cy - size - 4 + i * 10, /dwarf/.test(o.i) && i === 0 ? 6 : 9, cc);
     }
     if (t.includes('planet')) { g.fillStyle = '#5a7088'; g.beginPath(); g.arc(cx - size - 16, cy + 10, 4, 0, Math.PI * 2); g.fill(); }
   }
@@ -175,7 +175,7 @@
   function preview(o) {
     const key = o.n;
     if (cache.has(key)) return cache.get(key);
-    const w = 252, h = 110, k = 2;
+    const w = 120, h = 120, k = 2;
     const cv = document.createElement('canvas');
     cv.width = w * k; cv.height = h * k;
     const g = cv.getContext('2d');
