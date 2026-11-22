@@ -319,9 +319,13 @@ button:focus-visible, input:focus-visible, summary:focus-visible {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
-#skyCard .preview { display: block; width: 100%; aspect-ratio: 252 / 110; margin: 0 0 8px; border-radius: 8px; border: 1px solid var(--line); }
-#skyCard .cat, .guide-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--c); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
-#skyCard .cat::before, .guide-legend span::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--c); }
+#skyCard .head { display: flex; gap: 10px; align-items: flex-start; }
+#skyCard .preview { flex: none; width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+#skyCard .cat, .guide-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--c); font-size: 11px;
+}
+.guide-legend span { font-size: 9.5px; }
+#skyCard .cat { letter-spacing: 0.04em; text-transform: uppercase; }
+#skyCard .cat::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--c); }
 .guide-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 #skyCard h2 { margin: 0 0 2px; font-size: 15px; font-weight: 500; }
 #skyCard .kind { color: var(--accent); font-size: 12px; margin-bottom: 6px; }
