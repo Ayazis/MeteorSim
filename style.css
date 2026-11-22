@@ -124,6 +124,18 @@ h1 { font-size: 16px; font-weight: 600; margin: 0; }
 
 section { padding: 14px 0; border-top: 1px solid var(--line); }
 .panel-head + section { border-top: 0; margin-top: 4px; }
+/* The search row and its close button stay pinned while the panel scrolls. */
+#panel > .panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -18px;
+  padding: 18px 18px 8px;
+  background: #0b0f1a;
+  border-radius: 16px 16px 0 0;
+}
+#panel { padding-top: 0; }
+#panel.dragging { transition: none; }
 
 .label {
   display: flex;
@@ -300,6 +312,12 @@ button:focus-visible, input:focus-visible, summary:focus-visible {
     max-height: 62vh;
   }
   body.ui-hidden #panel { transform: translateY(calc(100% + 24px)); }
+  #panel > .panel-head { padding-top: 22px; }
+  #panel > .panel-head::before {   /* grab handle: swipe down to hide */
+    content: ""; position: absolute; top: 8px; left: 50%;
+    width: 36px; height: 4px; margin-left: -18px;
+    border-radius: 2px; background: var(--line);
+  }
   #openPanel { top: auto; bottom: 16px; right: 16px; }
 }
 
