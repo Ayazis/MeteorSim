@@ -478,14 +478,16 @@ input.tod { margin-top: 10px; }
 #trackBar .track-actions { display: flex; gap: 6px; flex: none; }
 #trackBar .track-info.on { border-color: var(--accent); color: var(--accent); }
 #trackBar .track-close { padding: 6px 10px; }
-#trackBar .track-speed { display: flex; flex-wrap: wrap; gap: 6px; }
-#trackBar .track-speed button { flex: 1 1 auto; }
-#trackBar .track-speed button.active { background: var(--accent); color: #0b1220; border-color: var(--accent); }
+#trackBar .track-speed { display: flex; align-items: center; gap: 10px; }
+#trackBar .track-play { flex: none; width: 40px; height: 40px; padding: 0; font-size: 13px; }
+#trackBar .track-slider { flex: 1; min-width: 0; touch-action: none; }
+#trackBar .track-rate { flex: none; min-width: 6.5em; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) {
   #trackBar { bottom: auto; top: 12px; }
   body.tracking #hud { display: none; }
   #trackBar button { padding: 10px 12px; min-height: 44px; }
-  #trackBar .track-speed { display: grid; grid-template-columns: repeat(3, 1fr); }
+  #trackBar .track-play { width: 48px; height: 48px; }
+  #trackBar .track-slider { height: 44px; }
   body.tracking #skyCard p, body.tracking #skyCard .preview { display: none; }
   body.tracking #skyCard { max-width: calc(100vw - 32px); }
 }
