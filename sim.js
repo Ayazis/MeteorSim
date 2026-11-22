@@ -299,6 +299,8 @@
   // The 4K map comes first so the sky appears quickly; big screens then swap in the 8K map.
   const sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
   let skyReady = false, sky8k = null;
+  // The WebGL sky is usable: loaded, and its context not lost. Otherwise the 2D canvas draws a generated sky.
+  const skyLive = () => !!(sky && skyReady && !sky.lost);
   // The 8K map is fetched once the view needs it: on a big screen, or when zoomed in.
   function wantSky8k() {
     if (!sky || !skyReady || sky8k || sky.maxTexture < 8192) return;
@@ -311,6 +313,17 @@
       .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
   }
   if (sky) {
+    sky.on('lost', () => {
+      console.warn('WebGL context lost: drawing the generated sky until it comes back.');
+      document.body.classList.remove('real-sky');
+      skyDirty = true;
+      updateResInfo();
+    });
+    sky.on('restored', () => {
+      if (skyReady) document.body.classList.add('real-sky');
+      skyDirty = true;
+      updateResInfo();
+    });
     sky.load('assets/starmap_4k.jpg')
       .then(() => {
         skyReady = true; skyDirty = true;
@@ -328,7 +341,7 @@
   function updateResInfo() {
     if (!hudRes || !resInfoReady) return;
     const f = cam.fov / DEG;
-    const stars = sky && skyReady ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    const stars = skyLive() ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
     const moonTxt = kLabel(moonMap.w) + (moonMap.loading ? ` → ${kLabel(moonMap.loading)}…` : '');
     hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · star map ${stars} · Moon ${moonTxt}`;
   }
@@ -580,7 +593,7 @@
 
   function renderBg(quick) {
     const c = bgx;
-    if (sky && skyReady) {
+    if (skyLive()) {
       // The real sky is drawn by WebGL; this layer only carries the comet.
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.clearRect(0, 0, bg.width, bg.height);
@@ -714,7 +727,9 @@
   // NASA LRO colour map of the Moon (public domain, NASA's Scientific Visualization Studio).
   // The disc is shaded per pixel from it: lit from the Sun's side, with earthshine on the rest.
   // Three sizes: 1K straight away, then 2K and 4K only once the Moon is drawn big enough to show them.
-  const MOON_MAPS = [[1024, 'assets/moon_1k.jpg'], [2048, 'assets/moon_2k.jpg'], [4096, 'assets/moon_4k.jpg']];
+  // Phones stop at 2K: the 4K map alone takes 64 MB of memory once decoded.
+  const MOON_MAPS = [[1024, 'assets/moon_1k.jpg'], [2048, 'assets/moon_2k.jpg'], [4096, 'assets/moon_4k.jpg']]
+    .slice(0, matchMedia('(pointer: coarse)').matches ? 2 : 3);
   const moonMap = { data: null, w: 0, h: 0, loading: 0 };
   function loadMoonMap(width, url) {
     moonMap.loading = width;
@@ -1355,7 +1370,7 @@
       while (nextSpawn <= simT && n < 3000) { if (Math.random() < radFactor) spawnOne(); nextSpawn += expRand(S.rate); n++; }
       if (n >= 3000) resetSpawn();
     }
-    const real = !!(sky && skyReady);
+    const real = skyLive();
     if (skyDirty) {
       const moving = now - lastCamMove < 150;
       renderBg(moving); renderFg();
@@ -1951,10 +1966,10 @@
    * A 'meteorsim-ready' event fires on window once this API exists.
    */
   const API = {
-    get realSky() { return !!(sky && skyReady); },
+    get realSky() { return skyLive(); },
     get skyTexture() { return sky ? sky.textureSize : 0; },
     // true once the star map is the sharpest this device will get (8K, or 4K where 8K can't be used)
-    get skyFull() { return !!(sky && skyReady) && (sky.textureSize >= 8192 || sky.maxTexture < 8192); },
+    get skyFull() { return skyLive() && (sky.textureSize >= 8192 || sky.maxTexture < 8192); },
     getObserver() {
       return { name: OBS.name, lat: OBS.lat, lon: OBS.lon, tz: OBS.tz, date: new Date(clockMs), lst: lstNow(),
         sunAlt: sunAltDeg, sunAz: (((azOf(sunVec) / DEG) % 360) + 360) % 360, moonAlt: moonAltDeg,

@@ -51,15 +51,27 @@
   window.DeepSkyPhotos = { has: object => !!object && (keys.has(norm(object.s)) || keys.has(norm(object.n))), list: OBJECTS };
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-  // Small and full-size images, fetched on demand.
+  // Small and full-size images, fetched on demand. A full-size photo takes 16 MB once decoded, so only
+  // the few most recently drawn are kept (fewer on phones, which otherwise lose the WebGL sky).
   const images = new Map();
+  const MAX_FULL = matchMedia('(pointer: coarse)').matches ? 3 : 8;
+  function evict() {
+    const full = [...images].filter(([k]) => !k.endsWith('_s'));
+    if (full.length <= MAX_FULL) return;
+    full.sort((a, b) => a[1].used - b[1].used);
+    for (const [k, rec] of full.slice(0, full.length - MAX_FULL)) {
+      if (rec.img) { rec.img.width = rec.img.height = 0; }   // free the canvas memory now
+      images.delete(k);
+    }
+  }
   function image(o, full) {
     const key = o.id + (full ? '' : '_s');
     let rec = images.get(key);
+    if (rec) rec.used = performance.now();
     if (!rec) {
-      rec = { img: null, ready: false };
+      rec = { img: null, ready: false, used: performance.now() };
       const img = new Image();
-      img.onload = () => { rec.img = toLight(img); rec.ready = true; };
+      img.onload = () => { rec.img = toLight(img); rec.ready = true; if (full) evict(); };
       img.src = 'assets/deepsky/' + key + '.jpg';
       images.set(key, rec);
     }

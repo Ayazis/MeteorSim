@@ -282,6 +282,23 @@ void main() {
       depthTest: false, depthWrite: false
     });
 
+    // Phones drop the WebGL context when memory runs short (or the tab sits in the background).
+    // Ask for it back, keep the decoded map, and upload it again once the context returns.
+    let lost = false;
+    const listeners = { lost: [], restored: [] };
+    canvas.addEventListener('webglcontextlost', e => {
+      e.preventDefault();   // allows the browser to restore the context
+      lost = true;
+      listeners.lost.forEach(fn => fn());
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      lost = false;
+      const texture = uniforms.uSky.value;
+      if (texture) texture.needsUpdate = true;
+      auroraTarget.dispose();
+      listeners.restored.forEach(fn => fn());
+    });
+
     async function load(url) {
       const img = await decode(url);
       const texture = new THREE.Texture(img);
@@ -308,6 +325,7 @@ void main() {
     }
 
     function render(u) {
+      if (lost) return;
       const size = uniforms.uRes.value;
       if (size.x !== canvas.width || size.y !== canvas.height) {
         size.set(canvas.width, canvas.height);
@@ -330,6 +348,8 @@ void main() {
     return {
       maxTexture: renderer.capabilities.maxTextureSize,
       load, render,
+      get lost() { return lost; },
+      on(event, fn) { listeners[event]?.push(fn); },
       get textureSize() { return uniforms.uSky.value?.image.width || 0; }
     };
   };
