@@ -1245,6 +1245,17 @@
       skyCard.querySelector('h2').textContent = hasPhoto(o) ? `${o.n} *` : o.n;
       skyCard.querySelector('.kind').textContent = `${o.t} · ${where}` + (hasPhoto(o) ? ` · ${PHOTO_NOTE}` : '');
       skyCard.querySelector('p').textContent = o.i;
+      const photo = window.DeepSkyPhotos?.find(o);
+      if (photo) {
+        // Where the photo comes from, with a link to its page (credit and licence are there too).
+        const line = document.createElement('div');
+        line.className = 'photo-src';
+        const a = document.createElement('a');
+        a.href = photo.src; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = 'View source ↗';
+        line.append(`Photo: ${photo.credit} (CC BY 4.0) · `, a);
+        skyCard.append(line);
+      }
       skyCard.hidden = false;
     }
     const cw = skyCard.offsetWidth, ch = skyCard.offsetHeight;
