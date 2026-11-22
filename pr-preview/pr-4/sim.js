@@ -1755,9 +1755,25 @@
   el.fov.addEventListener('input', () => { cam.fov = +el.fov.value * DEG; updateCam(); syncFov(); });
 
   let lastSpeed = 1;
+  const TRACK_MIN = 60, TRACK_MAX = 1209600, TRACK_DEFAULT = 3600;
+  const trackSlider = document.querySelector('#trackSpeed .track-slider');
+  const sliderToSpeed = v => Math.round(TRACK_MIN * Math.pow(TRACK_MAX / TRACK_MIN, v / 1000));
+  const speedToSlider = r => 1000 * Math.log(clamp(r, TRACK_MIN, TRACK_MAX) / TRACK_MIN) / Math.log(TRACK_MAX / TRACK_MIN);
+  function fmtRate(r) {
+    const units = [[604800, 'wk'], [86400, 'day'], [3600, 'h'], [60, 'min'], [1, 's']];
+    for (const [u, n] of units) if (r >= u * 0.999) { const x = r / u; return `${x < 10 ? +x.toFixed(1) : Math.round(x)} ${n}/s`; }
+    return `${r}×`;
+  }
+  function syncTrackSpeed() {
+    const run = S.timeScale > 0, r = run ? S.timeScale : lastSpeed;
+    if (document.activeElement !== trackSlider) trackSlider.value = speedToSlider(r);
+    const play = document.querySelector('#trackBar .track-play');
+    play.textContent = run ? '❚❚' : '▶'; play.setAttribute('aria-label', run ? 'Pause' : 'Play');
+    document.querySelector('#trackBar .track-rate').textContent = run ? fmtRate(r) : 'Paused';
+  }
   function setTime(t) {
     if (t > 0) lastSpeed = t;
-    S.timeScale = t; setSeg(el.timeSeg, 't', t); setSeg($('trackSpeed'), 't', t);
+    S.timeScale = t; setSeg(el.timeSeg, 't', t); syncTrackSpeed();
   }
   el.timeSeg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTime(+b.dataset.t); });
   // ---- date, time of day and place
@@ -1960,7 +1976,7 @@
     trackBar.querySelector('.track-stop').hidden = false;
     // On a phone the card covers the view, so it starts hidden there.
     setInfoHidden(matchMedia('(max-width: 700px)').matches);
-    if (S.timeScale === 0) setTime(1);
+    if (S.timeScale < TRACK_MIN) setTime(TRACK_DEFAULT);   // real time is far too slow to see anything move
     trackBar.hidden = false;
   }
   // Stopping keeps the speed controls up (time keeps running); the × closes them.
@@ -1987,7 +2003,10 @@
   trackBar.querySelector('.track-stop').addEventListener('click', stopTracking);
   trackBar.querySelector('.track-info').addEventListener('click', () => setInfoHidden(!infoHidden));
   trackBar.querySelector('.track-close').addEventListener('click', () => { stopTracking(); trackBar.hidden = true; });
-  trackBar.querySelector('.track-speed').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTime(+b.dataset.t); });
+  // Speed slider, on a log scale from 1 minute to 2 weeks of sky time per second.
+  trackSlider.addEventListener('input', () => setTime(sliderToSpeed(+trackSlider.value)));
+  trackBar.querySelector('.track-play').addEventListener('click', () => setTime(S.timeScale > 0 ? 0 : Math.max(TRACK_MIN, lastSpeed)));
+  syncTrackSpeed();
 
   function goToObject(object) {
     const v = object.kind ? trackDir(object) : eqToHor(object.ra * HR, object.dec * DEG, lstNow());
