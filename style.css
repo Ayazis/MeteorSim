@@ -49,7 +49,7 @@ body.real-sky #skygl { opacity: 1; }
 }
 
 /* ---------- HUD ---------- */
-#hud {
+#hud { display: none;
   position: fixed;
   left: 24px;
   top: 20px;
@@ -433,3 +433,6 @@ input.tod { margin-top: 10px; }
 .goto-results button:hover, .goto-results button:focus-visible { background: var(--accent-bg); }
 .goto-results small { display: block; color: var(--muted); }
 .res-info { opacity: 0.7; }
+.dso-credit { position: fixed; right: 12px; bottom: 30px; max-width: min(60vw, 640px); font-size: 11px; line-height: 1.35;
+  color: rgba(220, 228, 240, 0.65); text-align: right; pointer-events: none; z-index: 5; }
+.dso-credit[hidden] { display: none; }
