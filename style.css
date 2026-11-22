@@ -315,7 +315,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible {
   color: var(--text);
   font-size: 12.5px;
   line-height: 1.45;
-  pointer-events: none;
+  pointer-events: auto;   /* hoverable, so its links can be clicked */
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }

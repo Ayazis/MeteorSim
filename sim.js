@@ -1943,6 +1943,15 @@
     skyDirty = true;
   }
   let longPress = null, lastTap = null;
+  // Hovering: the card stays up while the pointer crosses the gap to it and while it is over it,
+  // so its links can be clicked.
+  let hoverOff = 0, overCard = false;
+  function leaveHover() {
+    clearTimeout(hoverOff);
+    hoverOff = setTimeout(() => { if (!overCard) { guideHover = null; canvas.style.cursor = ''; } }, 400);
+  }
+  skyCard.addEventListener('pointerenter', () => { overCard = true; clearTimeout(hoverOff); });
+  skyCard.addEventListener('pointerleave', () => { overCard = false; if (guideHover) leaveHover(); });
   const cancelLongPress = () => { if (longPress) { clearTimeout(longPress.timer); longPress = null; } };
   canvas.addEventListener('contextmenu', e => e.preventDefault());   // a long press must not open a menu
 
@@ -1975,7 +1984,8 @@
     if (!prev) {
       if (S.guide && e.pointerType === 'mouse') {
         const o = guideAt(e.clientX, e.clientY);
-        if (o !== guideHover) { guideHover = o; canvas.style.cursor = o ? 'pointer' : ''; }
+        if (o) { clearTimeout(hoverOff); if (o !== guideHover) { guideHover = o; canvas.style.cursor = 'pointer'; } }
+        else if (guideHover) leaveHover();
       }
       return;
     }
