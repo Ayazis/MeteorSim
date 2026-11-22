@@ -330,7 +330,7 @@
     const f = cam.fov / DEG;
     const stars = sky && skyReady ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
     const moonTxt = kLabel(moonMap.w) + (moonMap.loading ? ` → ${kLabel(moonMap.loading)}…` : '');
-    hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · stars ${stars} · Moon ${moonTxt}`;
+    hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · star map ${stars} · Moon ${moonTxt}`;
   }
 
   function updateCam() {
@@ -1193,7 +1193,7 @@
       else { ctx.arc(x, y, r, 0, TAU); ctx.stroke(); }
       ctx.fillStyle = ctx.strokeStyle;
       ctx.font = `${active ? 500 : 400} 11.5px Inter, system-ui, sans-serif`;
-      ctx.fillText(deep ? `${o.n}` : o.n, x, y - r - 5);
+      ctx.fillText(hasPhoto(o) ? `${o.n} *` : o.n, x, y - r - 5);
       guideHits.push({ o, x, y });
     }
     ctx.restore();
@@ -1209,6 +1209,10 @@
   }
   const skyCard = document.getElementById('skyCard');
   let cardFor = null;
+  // Objects with a deep-sky photo get an asterisk (deepsky.js loads after this file, so look it up late).
+  const hasPhoto = o => !!(window.DeepSkyPhotos && window.DeepSkyPhotos.has(o));
+  const PHOTO_NOTE = '* Photo available: zoom in to see it';
+
   function updateCard() {
     const o = guideHover || guidePinned;
     const h = o && guideHits.find(g => g.o === o);
@@ -1223,8 +1227,8 @@
         <dt>Brightness</dt><dd>magnitude ${o.m.toFixed(1)}${o.m > lmNow ? ' · too faint for this sky' : ''}</dd>
         <dt>Position</dt><dd>${Math.round(alt)}° up, ${COMPASS[Math.round(az / 45) % 8]} (${Math.round(az)}°)</dd>
         </dl><p></p>`;
-      skyCard.querySelector('h2').textContent = o.n;
-      skyCard.querySelector('.kind').textContent = `${o.t} · ${where}`;
+      skyCard.querySelector('h2').textContent = hasPhoto(o) ? `${o.n} *` : o.n;
+      skyCard.querySelector('.kind').textContent = `${o.t} · ${where}` + (hasPhoto(o) ? ` · ${PHOTO_NOTE}` : '');
       skyCard.querySelector('p').textContent = o.i;
       skyCard.hidden = false;
     }
@@ -1797,7 +1801,10 @@
     }
     cam.yaw = azOf(v);
     cam.pitch = altitude;
+    const photo = window.DeepSkyPhotos?.list.find(p => hasPhoto(object) && (p.code.replace(/\s/g, '') === String(object.s || '').replace(/\s/g, '') || p.name === object.n));
+    if (photo) cam.fov = clamp(Math.max(photo.w, photo.h) * 2.2, MIN_FOV, 60) * DEG;   // close enough to show the photo
     updateCam();
+    syncFov();
     setGuide(true);
     guideHover = null;
     guidePinned = object.kind ? object : null;
@@ -1814,9 +1821,11 @@
     for (const {object, detail} of matches) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = object.n;
+      const photo = hasPhoto(object);
+      button.textContent = photo ? `${object.n} *` : object.n;
+      if (photo) button.title = PHOTO_NOTE;
       const small = document.createElement('small');
-      small.textContent = detail;
+      small.textContent = photo ? `${detail} · photo` : detail;
       button.append(small);
       button.onclick = () => goToObject(object);
       results.append(button);
