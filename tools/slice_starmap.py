@@ -19,6 +19,7 @@ import os
 import sys
 
 import numpy as np
+import Imath
 import OpenEXR
 from PIL import Image
 
@@ -32,17 +33,24 @@ def srgb8(x):
     return (y * 255 + 0.5).astype(np.uint8)
 
 
+def read_rows(exr, y0, y1, w):
+    """Rows y0..y1 (inclusive) as float16 RGB, read in strips so a 64K map never has to fit in memory."""
+    half = Imath.PixelType(Imath.PixelType.HALF)
+    return np.dstack([np.frombuffer(exr.channel(c, half, y0, y1), np.float16).reshape(-1, w) for c in 'RGB'])
+
+
 def main(src, out):
     os.makedirs(out, exist_ok=True)
-    channels = OpenEXR.File(src).channels()
-    rgb = channels['RGB'].pixels if 'RGB' in channels else np.dstack([channels[c].pixels for c in 'RGB'])
-    h, w = rgb.shape[:2]
+    exr = OpenEXR.InputFile(src)
+    box = exr.header()['dataWindow']
+    w, h = box.max.x - box.min.x + 1, box.max.y - box.min.y + 1
     assert w == 2 * h and h % TILE == 0, f'unexpected map size {w}x{h}'
     rows, cols = h // TILE, w // TILE
     for r in range(rows):
-        y0, y1 = r * TILE - PAD, (r + 1) * TILE + PAD
-        ys = np.clip(np.arange(y0, y1), 0, h - 1)
-        band = srgb8(rgb[ys])                       # (TILE + 2 PAD) rows, the full width
+        y0, y1 = max(0, r * TILE - PAD), min(h - 1, (r + 1) * TILE + PAD - 1)
+        strip = read_rows(exr, y0, y1, w)
+        ys = np.clip(np.arange(r * TILE - PAD, (r + 1) * TILE + PAD), 0, h - 1) - y0
+        band = srgb8(strip[ys])                     # (TILE + 2 PAD) rows, the full width
         for c in range(cols):
             xs = np.arange(c * TILE - PAD, (c + 1) * TILE + PAD) % w
             Image.fromarray(band[:, xs]).save(os.path.join(out, f'{r}_{c}.jpg'),

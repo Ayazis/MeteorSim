@@ -77,9 +77,11 @@ void main() {
   const FS = `
 precision highp float;
 uniform sampler2D uSky;
-uniform sampler2D uTiles;      // atlas of high-resolution tiles (slots of uTileSlot px, each with a 1 px border)
-uniform sampler2D uTileMap;    // per map tile: 0 = not loaded, else 1 + atlas slot
-uniform vec4 uTileGrid;        // cols, rows, map width in px, 0 = tiles off
+uniform sampler2D uTiles;      // atlas of high-resolution tiles (slots of uTileAtlas.y px, each with a 1 px border)
+uniform sampler2D uTileMap0;   // per map tile of each level: 0 = not loaded, else 1 + atlas slot
+uniform sampler2D uTileMap1;
+uniform vec4 uTileGrid0;       // level 0 (e.g. 32K): cols, rows, map width in px, 0 = off
+uniform vec4 uTileGrid1;       // level 1 (e.g. 64K), finer
 uniform vec3 uTileAtlas;       // slots per side, slot size, tile size (px)
 uniform sampler2D uAurora;
 uniform float uAuroraVisibility;
@@ -105,6 +107,21 @@ float airmass(float alt) {
 vec3 toSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+
+// One tile level: its colour at uv (rgb) and how much it should count (a). The tiles have no
+// mipmaps, so they fade in only once one tile pixel covers about a screen pixel or more.
+vec4 tileLevel(sampler2D map, vec4 grid, vec2 uv, float span) {
+  if (grid.w < 0.5) return vec4(0.0);
+  float w = 1.0 - smoothstep(1.0, 2.0, span * grid.z);   // span * width: tile pixels per screen pixel
+  if (w <= 0.0) return vec4(0.0);
+  ivec2 cell = ivec2(min(uv * grid.xy, grid.xy - 1.0));
+  float slot = texelFetch(map, cell, 0).r * 255.0 - 1.0;
+  if (slot < -0.5) return vec4(0.0);
+  vec2 local = uv * grid.xy - vec2(cell);
+  vec2 sxy = vec2(mod(slot, uTileAtlas.x), floor(slot / uTileAtlas.x));
+  vec2 auv = (sxy * uTileAtlas.y + 1.0 + local * uTileAtlas.z) / (uTileAtlas.x * uTileAtlas.y);
+  return vec4(textureLod(uTiles, auv, 0.0).rgb, w);
 }
 
 void main() {
@@ -135,23 +152,13 @@ void main() {
     // brings back what stands out from the smooth Milky Way without brightening the Milky Way.
     vec3 sharp = textureGrad(uSky, uv, gx * 0.35, gy * 0.35).rgb;
 
-    // Zoomed in far enough, the high-resolution tiles take over where they have loaded.
-    // They have no mipmaps, so they fade in only once one tile pixel covers about a screen pixel or more.
-    if (uTileGrid.w > 0.5) {
-      float footprint = max(length(gx), length(gy)) * uTileGrid.z;   // tile pixels per screen pixel
-      float w = 1.0 - smoothstep(1.0, 2.0, footprint);
-      if (w > 0.0) {
-        ivec2 cell = ivec2(min(uv * uTileGrid.xy, uTileGrid.xy - 1.0));
-        float slot = texelFetch(uTileMap, cell, 0).r * 255.0 - 1.0;
-        if (slot > -0.5) {
-          vec2 local = uv * uTileGrid.xy - vec2(cell);
-          vec2 sxy = vec2(mod(slot, uTileAtlas.x), floor(slot / uTileAtlas.x));
-          vec2 auv = (sxy * uTileAtlas.y + 1.0 + local * uTileAtlas.z) / (uTileAtlas.x * uTileAtlas.y);
-          vec3 fine = textureLod(uTiles, auv, 0.0).rgb;
-          base = mix(base, fine, w);
-          sharp = mix(sharp, fine, w);
-        }
-      }
+    // Zoomed in far enough, the high-resolution tiles take over where they have loaded,
+    // the finer level over the coarser one.
+    float span = max(length(gx), length(gy));   // map widths per screen pixel
+    for (int level = 0; level < 2; level++) {
+      vec4 t = level == 0 ? tileLevel(uTileMap0, uTileGrid0, uv, span) : tileLevel(uTileMap1, uTileGrid1, uv, span);
+      base = mix(base, t.rgb, t.a);
+      sharp = mix(sharp, t.rgb, t.a);
     }
     vec3 pts = max(sharp - base, 0.0);
 
@@ -348,17 +355,21 @@ void main() {
       previous?.image.close?.();
     }
 
-    // ---- High-resolution tiles ("supermax"): a map too big for one texture (32K, 64K), cut into
+    // ---- High-resolution tiles ("supermax"): maps too big for one texture (32K, 64K), cut into
     // tiles by tools/slice_starmap.py. Only the tiles in view are fetched, once zoomed in far
-    // enough to need them, and kept in a fixed atlas of slots; the least recently seen give way.
-    // The atlas and the slot lookup are raw WebGL textures handed to three.js as ready-made.
+    // enough to need them, into one fixed atlas of slots shared by all levels; the least recently
+    // seen give way. The atlas and the slot lookups are raw WebGL textures handed to three.js.
+    const MAX_LEVELS = 2;
     uniforms.uTiles = { value: new THREE.Texture() };
-    uniforms.uTileMap = { value: new THREE.Texture() };
-    uniforms.uTileGrid = { value: new THREE.Vector4(1, 1, 1, 0) };
     uniforms.uTileAtlas = { value: new THREE.Vector3(1, 1, 1) };
-    let tiles = null;   // { base, cols, rows, width, tile, pad, slotPx, grid, slots, cells, map, entries, free, ... }
+    for (let i = 0; i < MAX_LEVELS; i++) {
+      uniforms['uTileMap' + i] = { value: new THREE.Texture() };
+      uniforms['uTileGrid' + i] = { value: new THREE.Vector4(1, 1, 1, 0) };
+    }
+    let tiles = null;   // { levels, slotPx, tile, grid, slots, entries, free, uploads, inflight, atlasTex, wanted }
     let tileGen = 0;
     const gl = renderer.getContext();
+    const LEVEL_KEY = 1 << 20;   // entry key = level * LEVEL_KEY + row * cols + col
 
     function rawTexture(holder, width, height, format, filter) {
       const tex = gl.createTexture();
@@ -385,9 +396,11 @@ void main() {
       tileGen++;
       const size = tiles.grid * tiles.slotPx;
       tiles.atlasTex = rawTexture(uniforms.uTiles.value, size, size, gl.SRGB8_ALPHA8, gl.LINEAR);
-      tiles.mapTex = rawTexture(uniforms.uTileMap.value, tiles.cols, tiles.rows, gl.R8, gl.NEAREST);
-      tiles.map.fill(0);
-      tiles.mapDirty = true;
+      tiles.levels.forEach((lv, i) => {
+        lv.mapTex = rawTexture(uniforms['uTileMap' + i].value, lv.cols, lv.rows, gl.R8, gl.NEAREST);
+        lv.map.fill(0);
+        lv.mapDirty = true;
+      });
       tiles.entries.clear();
       tiles.free = Array.from({ length: tiles.slots }, (_, i) => tiles.slots - 1 - i);
       tiles.uploads = [];
@@ -395,41 +408,49 @@ void main() {
     }
     function dropTileGL() {
       if (!tiles) return;
-      if (!lost) { gl.deleteTexture(tiles.atlasTex); gl.deleteTexture(tiles.mapTex); }
-      for (const holder of [uniforms.uTiles.value, uniforms.uTileMap.value]) renderer.properties.remove(holder);
-      uniforms.uTiles.value = new THREE.Texture();
-      uniforms.uTileMap.value = new THREE.Texture();
+      if (!lost) {
+        gl.deleteTexture(tiles.atlasTex);
+        tiles.levels.forEach(lv => gl.deleteTexture(lv.mapTex));
+      }
+      for (const name of ['uTiles', ...Array.from({ length: MAX_LEVELS }, (_, i) => 'uTileMap' + i)]) {
+        renderer.properties.remove(uniforms[name].value);
+        uniforms[name].value = new THREE.Texture();
+      }
+      for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value.w = 0;
       for (const t of tiles.uploads) t.img.close?.();
       tiles = null;
       tileGen++;
-      uniforms.uTileGrid.value.w = 0;
     }
 
-    // base: a folder made by slice_starmap.py (with tiles.json), or null to turn tiles off.
-    async function setTiles(base) {
+    // bases: folders made by slice_starmap.py (each with tiles.json), coarse to fine, all with the
+    // same tile size; empty or null turns tiles off. Levels that fail to load are left out.
+    async function setTiles(bases) {
       dropTileGL();
-      if (!base) return false;
-      const info = await (await fetch(base + '/tiles.json')).json();
-      const slotPx = info.tile + 2 * info.pad;
-      const grid = Math.min(7, Math.floor(renderer.capabilities.maxTextureSize / slotPx));
+      bases = (bases || []).slice(0, MAX_LEVELS);
+      const infos = (await Promise.all(bases.map(base => fetch(base + '/tiles.json')
+        .then(r => r.ok ? r.json() : null).then(info => info && { base, ...info }).catch(() => null)))).filter(Boolean);
+      if (!infos.length) return false;
+      const slotPx = infos[0].tile + 2 * infos[0].pad;
+      const levels = infos.filter(info => info.tile + 2 * info.pad === slotPx && info.cols * info.rows < LEVEL_KEY);
+      const grid = Math.min(8, Math.floor(renderer.capabilities.maxTextureSize / slotPx));
       if (grid < 3) return false;
       dropTileGL();   // in case two calls overlapped
-      tiles = { base, ...info, slotPx, grid, slots: grid * grid, map: new Uint8Array(info.cols * info.rows),
-        entries: new Map(), wanted: [] };
+      tiles = { levels: levels.map(lv => ({ ...lv, map: new Uint8Array(lv.cols * lv.rows) })),
+        slotPx, tile: levels[0].tile, grid, slots: grid * grid, entries: new Map(), wanted: [] };
       initTileGL();
-      uniforms.uTileGrid.value.set(info.cols, info.rows, info.width, 1);
-      uniforms.uTileAtlas.value.set(grid, slotPx, info.tile);
+      tiles.levels.forEach((lv, i) => uniforms['uTileGrid' + i].value.set(lv.cols, lv.rows, lv.width, 1));
+      uniforms.uTileAtlas.value.set(grid, slotPx, tiles.tile);
       return true;
     }
 
-    // Which tiles cover the screen, nearest the centre first. Mirrors the shader's mapping.
+    // Which tiles of each level cover the screen: coarse levels first (they fill in quickly and
+    // stand in while finer tiles load), and within a level nearest the centre first.
+    // Mirrors the shader's mapping.
     function visibleTiles(u) {
       const w = canvas.width, h = canvas.height;
-      // map pixels per screen pixel along the celestial equator; the shader fades tiles in below 2
-      if (tiles.width / (2 * Math.PI * u.focal) >= 2) return [];
       const sl = Math.sin(u.lat), cl = Math.cos(u.lat);
-      const nx = 16, ny = Math.max(4, Math.round(16 * h / w));
-      const found = new Map();
+      const nx = 24, ny = Math.max(6, Math.round(24 * h / w));
+      const cells = [];
       for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
         const sx = (i / nx - 0.5) * w / u.focal, sy = (j / ny - 0.5) * h / u.focal;
         let dx = u.F[0] + u.R[0] * sx + u.U[0] * sy, dy = u.F[1] + u.R[1] * sx + u.U[1] * sy, dz = u.F[2] + u.R[2] * sx + u.U[2] * sy;
@@ -438,12 +459,22 @@ void main() {
         const dec = Math.asin(Math.max(-1, Math.min(1, sl * dz + cl * dy)));
         const ra = u.lst - Math.atan2(-dx, cl * dz - sl * dy);
         let mu = 0.5 - ra / (2 * Math.PI); mu -= Math.floor(mu);
-        const col = Math.min(tiles.cols - 1, Math.floor(mu * tiles.cols));
-        const row = Math.min(tiles.rows - 1, Math.floor((0.5 - dec / Math.PI) * tiles.rows));
-        const key = row * tiles.cols + col, dist = Math.hypot(sx, sy);
-        if (!found.has(key) || found.get(key) > dist) found.set(key, dist);
+        cells.push([mu, 0.5 - dec / Math.PI, Math.hypot(sx, sy)]);
       }
-      return [...found].sort((a, b) => a[1] - b[1]).map(e => e[0]).slice(0, tiles.slots);
+      const out = [];
+      tiles.levels.forEach((lv, level) => {
+        // map pixels per screen pixel along the celestial equator; the shader fades tiles in below 2
+        if (lv.width / (2 * Math.PI * u.focal) >= 2) return;
+        const found = new Map();
+        for (const [mu, mv, dist] of cells) {
+          const col = Math.min(lv.cols - 1, Math.floor(mu * lv.cols));
+          const row = Math.min(lv.rows - 1, Math.max(0, Math.floor(mv * lv.rows)));
+          const key = level * LEVEL_KEY + row * lv.cols + col;
+          if (!found.has(key) || found.get(key) > dist) found.set(key, dist);
+        }
+        out.push(...[...found].sort((a, b) => a[1] - b[1]).map(e => e[0]));
+      });
+      return out.slice(0, tiles.slots);
     }
 
     function fetchTile(key, now, wanted) {
@@ -452,15 +483,16 @@ void main() {
         let oldest = null;
         for (const [k, e] of tiles.entries) if (e.ready && !wanted.has(k) && (!oldest || e.seen < oldest[1].seen)) oldest = [k, e];
         if (!oldest) return false;
+        setSlot(oldest[0], 0);
         tiles.entries.delete(oldest[0]);
-        tiles.map[oldest[0]] = 0; tiles.mapDirty = true;
         slot = oldest[1].slot;
       }
       const entry = { slot, ready: false, seen: now };
       tiles.entries.set(key, entry);
       tiles.inflight++;
-      const gen = tileGen, row = Math.floor(key / tiles.cols), col = key % tiles.cols;
-      decode(`${tiles.base}/${row}_${col}.jpg`).then(img => {
+      const lv = tiles.levels[Math.floor(key / LEVEL_KEY)], cell = key % LEVEL_KEY;
+      const gen = tileGen, row = Math.floor(cell / lv.cols), col = cell % lv.cols;
+      decode(`${lv.base}/${row}_${col}.jpg`).then(img => {
         if (gen !== tileGen) { img.close?.(); return; }
         tiles.inflight--;
         tiles.uploads.push({ key, entry, img });
@@ -473,6 +505,11 @@ void main() {
         console.warn('Star map tile unavailable', err);
       });
       return true;
+    }
+    function setSlot(key, value) {
+      const lv = tiles.levels[Math.floor(key / LEVEL_KEY)];
+      lv.map[key % LEVEL_KEY] = value;
+      lv.mapDirty = true;
     }
 
     function updateTiles(u) {
@@ -488,7 +525,7 @@ void main() {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, sx * tiles.slotPx, sy * tiles.slotPx, gl.RGBA, gl.UNSIGNED_BYTE, img);
         img.close?.();
         entry.ready = true;
-        tiles.map[key] = entry.slot + 1; tiles.mapDirty = true;
+        setSlot(key, entry.slot + 1);
       }
       if (tiles.uploads.length) listeners.tile.forEach(fn => fn());
       const list = visibleTiles(u);
@@ -499,11 +536,12 @@ void main() {
         if (e) { e.seen = now; continue; }
         if (tiles.inflight >= 6 || !fetchTile(key, now, wanted)) break;
       }
-      if (tiles.mapDirty) {
-        renderer.state.bindTexture(gl.TEXTURE_2D, tiles.mapTex);
+      for (const lv of tiles.levels) {
+        if (!lv.mapDirty) continue;
+        renderer.state.bindTexture(gl.TEXTURE_2D, lv.mapTex);
         unpackPlain();
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, tiles.cols, tiles.rows, gl.RED, gl.UNSIGNED_BYTE, tiles.map);
-        tiles.mapDirty = false;
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, lv.cols, lv.rows, gl.RED, gl.UNSIGNED_BYTE, lv.map);
+        lv.mapDirty = false;
       }
     }
 
@@ -535,7 +573,9 @@ void main() {
       // high-resolution tiles: map width (0 = off), tiles in view and how many of them have loaded
       get tileInfo() {
         if (!tiles) return { width: 0, wanted: 0, ready: 0 };
-        return { width: tiles.width, wanted: tiles.wanted.length,
+        // the finest level in view, and how many of all the tiles in view have loaded
+        const top = tiles.wanted.length ? Math.floor(Math.max(...tiles.wanted) / LEVEL_KEY) : 0;
+        return { width: tiles.levels[top].width, wanted: tiles.wanted.length,
           ready: tiles.wanted.filter(k => tiles.entries.get(k)?.ready).length };
       },
       // also catch a context that died without an event (seen after app switches on phones)
