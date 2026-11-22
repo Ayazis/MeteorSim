@@ -217,23 +217,9 @@ void main() {
     float band = exp(-abs(beta) / 0.2) * 0.05;               // the faint zodiacal band joining them
     sky += vec3(0.030, 0.027, 0.021) * (cone + gegen + band) * dark * ext * step(0.0, alt);
   }
-  // Light domes: the nearest town (sodium orange), a white LED-lit town and a far city glowing on the
-  // horizon. The far one shows even from a dark site.
-  {
-    float pol = uPollution;
-    vec3 sodium = vec3(1.0, 0.62, 0.30), led = vec3(0.85, 0.85, 0.80);
-    float t1 = 0.5 + 0.5 * cos(az - uDomeAz);
-    float t2 = 0.5 + 0.5 * cos(az - uDomeAz - 1.95);
-    float t3 = 0.5 + 0.5 * cos(az - uDomeAz + 2.45);
-    float ah = max(altd, 0.0);
-    float dl = length(uDome) + 1e-5;
-    vec3 domeCol = uDome / dl;                                // colour, without the town's strength
-    sky += uDome * pol * exp(-ah / 13.0) * (0.25 + 0.75 * pow(t1, 3.0));
-    sky += sodium * 0.0090 * exp(-ah / 7.0) * pow(t1, 10.0);
-    sky += (dl * pol * 0.55 + 0.0018) * led * exp(-ah / 7.0) * pow(t2, 14.0);
-    float farGlow = 0.0035 * (0.3 + 0.7 * (1.0 - smoothstep(-0.25, -0.05, uSunDir.z)));
-    sky += (sodium * 0.7 + domeCol * 0.3) * (farGlow + dl * pol * 0.4) * exp(-ah / 4.5) * pow(t3, 22.0);
-  }
+  // A town's light dome in one direction, plus general glow all round.
+  float toward = 0.5 + 0.5 * cos(az - uDomeAz);
+  sky += uDome * uPollution * exp(-max(altd, 0.0) / 13.0) * (0.3 + 0.7 * toward * toward);
 
   // Sunlight scattered in the air. Rayleigh (blue, broad, symmetric) plus Mie from aerosols
   // (white, strongly forward: the aureole). The light reaching each patch of sky has crossed a
