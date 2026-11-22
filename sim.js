@@ -307,7 +307,7 @@
     const big = longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
     if (!big && pxPerDeg < 4096 / 360 * 1.5) return;   // the 4K map still holds up
     sky8k = sky.load('assets/starmap_8k.jpg')
-      .then(() => { skyDirty = true; })
+      .then(() => { skyDirty = true; updateResInfo(); })
       .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
   }
   if (sky) {
@@ -316,8 +316,21 @@
         skyReady = true; skyDirty = true;
         document.body.classList.add('real-sky');
         wantSky8k();
+        updateResInfo();
       })
       .catch(err => console.warn('Star map unavailable, using the generated sky.', err));
+  }
+
+  // What is on screen: field of view and which map sizes are in use (or still loading).
+  const hudRes = document.getElementById('hudRes');
+  const kLabel = w => w ? `${Math.round(w / 1024)}K` : '–';
+  let resInfoReady = false;   // the Moon's map state is declared further down
+  function updateResInfo() {
+    if (!hudRes || !resInfoReady) return;
+    const f = cam.fov / DEG;
+    const stars = sky && skyReady ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    const moonTxt = kLabel(moonMap.w) + (moonMap.loading ? ` → ${kLabel(moonMap.loading)}…` : '');
+    hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · stars ${stars} · Moon ${moonTxt}`;
   }
 
   function updateCam() {
@@ -332,6 +345,7 @@
     lastCamMove = performance.now();
     drawCompass();
     wantSky8k();
+    updateResInfo();
   }
 
   // ---- compass: a heading tape in the HUD
@@ -715,10 +729,13 @@
         moonMap.w = c.width; moonMap.h = c.height; moonKey = '';
       }
       moonMap.loading = 0;
+      updateResInfo();
     };
-    img.onerror = () => { console.warn('Moon map unavailable:', url); moonMap.loading = 0; };
+    img.onerror = () => { console.warn('Moon map unavailable:', url); moonMap.loading = 0; updateResInfo(); };
     img.src = url;
+    updateResInfo();
   }
+  resInfoReady = true;
   loadMoonMap(...MOON_MAPS[0]);
   // A disc n pixels across shows about half the map's width, so it wants roughly 2n texels round.
   function wantMoonMap(n) {

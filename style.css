@@ -432,3 +432,4 @@ input.tod { margin-top: 10px; }
 }
 .goto-results button:hover, .goto-results button:focus-visible { background: var(--accent-bg); }
 .goto-results small { display: block; color: var(--muted); }
+.res-info { opacity: 0.7; }
