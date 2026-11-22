@@ -47,7 +47,9 @@ void main() {
     float base = mix(0.12, 0.39, uActivity) + 0.095*layer - 0.095*az*az
                + uFoldDepth*(0.21*fold + 0.065*sin(2.9*x + t + 1.8*fold));
     float h = elevation - base;
-    float filament = flow + (0.14 + 0.32*uTealTint)*h + 0.04*sin(2.0*x + t + 3.0*h);
+    // Rays follow the magnetic field lines, which are close to vertical: the filament depends on
+    // azimuth only, so each ray is a vertical line that converges toward the zenith in perspective.
+    float filament = flow + 0.04*sin(2.0*x + t);
     float rays = mix(0.25, 1.0, noise1(65.0*filament - 1.6*t))
                * mix(0.55, 1.0, noise1(22.0*filament + 0.8*t));
     rays = clamp(0.55 + uRayContrast*(rays - 0.55), 0.0, 1.0);
