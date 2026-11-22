@@ -16,17 +16,25 @@
     if (t.includes('nebula')) return 'nebula';
     return 'cluster';   // open, globular, pairs, asterisms, star clouds
   }
-  // Spectral class of each named star (primary), for its preview colour.
-  const SPEC = {
-    Sirius: 'A', Canopus: 'F', Arcturus: 'K', 'Rigil Kentaurus': 'G', Vega: 'A', Capella: 'G', Rigel: 'B',
-    Procyon: 'F', Betelgeuse: 'M', Achernar: 'B', Altair: 'A', Aldebaran: 'K', Antares: 'M', Spica: 'B',
-    Pollux: 'K', Castor: 'A', Fomalhaut: 'A', Deneb: 'A', Regulus: 'B', Adhara: 'B', Bellatrix: 'B',
-    Elnath: 'B', Alnilam: 'B', Alnitak: 'O', Mintaka: 'O', Saiph: 'B', Alioth: 'A', Dubhe: 'K', Merak: 'A',
-    'Mizar & Alcor': 'A', Alkaid: 'B', Polaris: 'F', Mirfak: 'F', Algol: 'B', Alpheratz: 'B', Hamal: 'K',
-    Schedar: 'K', Kochab: 'K', Eltanin: 'K', Rasalhague: 'A', Denebola: 'A', Algieba: 'K', Markab: 'B',
-    Albireo: 'K', Nunki: 'B', Shaula: 'B',
+  // Each named star: [colour of the main star, size, companion colours]. Sizes: d dwarf / main
+  // sequence, g giant, b bright giant, s supergiant. 'wd' is a white dwarf. Checked against spectral types.
+  const STARS = {
+    Sirius: ['A', 'd', ['wd']], Canopus: ['F', 'b', []], Arcturus: ['K2', 'g', []], 'Rigil Kentaurus': ['G', 'd', ['K', 'M']],
+    Vega: ['A', 'd', []], Capella: ['G', 'g', ['G', 'M', 'M']], Rigel: ['B', 's', ['B']], Procyon: ['F', 'd', ['wd']],
+    Betelgeuse: ['M', 's', []], Achernar: ['B', 'd', ['A']], Altair: ['A', 'd', []], Aldebaran: ['K5', 'g', []],
+    Antares: ['M', 's', ['B']], Spica: ['B', 'd', ['B']], Pollux: ['K', 'g', []], Castor: ['A', 'd', ['A', 'M']],
+    Fomalhaut: ['A', 'd', []], Deneb: ['A', 's', []], Regulus: ['B', 'd', ['wd', 'K', 'M']], Adhara: ['B', 'b', ['B']],
+    Bellatrix: ['B', 'g', []], Elnath: ['B', 'g', []], Alnilam: ['B', 's', []], Alnitak: ['O', 's', ['B', 'B']],
+    Mintaka: ['O', 'g', ['B', 'B']], Saiph: ['B', 's', []], Alioth: ['A', 'd', []], Dubhe: ['K', 'g', ['F']],
+    Merak: ['A', 'd', []], 'Mizar & Alcor': ['A', 'd', ['A', 'A']], Alkaid: ['B', 'd', []], Polaris: ['F', 's', ['F', 'F']],
+    Mirfak: ['F', 's', []], Algol: ['B', 'd', ['K', 'A']], Alpheratz: ['B', 'd', ['A']], Hamal: ['K2', 'g', []],
+    Schedar: ['K', 'g', []], Kochab: ['K5', 'g', []], Eltanin: ['K5', 'g', []], Rasalhague: ['A', 'g', ['K']],
+    Denebola: ['A', 'd', []], Algieba: ['K', 'g', ['G']], Markab: ['B', 'g', []], Albireo: ['K2', 'g', ['B']],
+    Nunki: ['B', 'd', []], Shaula: ['B', 'd', ['B', 'B']],
   };
-  const TINT = { O: [160, 185, 255], B: [175, 200, 255], A: [230, 238, 255], F: [255, 250, 230], G: [255, 236, 180], K: [255, 196, 120], M: [255, 130, 80] };
+  const SIZE = { d: 14, g: 22, b: 27, s: 33 };
+  const TINT = { O: [160, 185, 255], B: [175, 200, 255], A: [230, 238, 255], F: [255, 250, 230], G: [255, 236, 180],
+    K: [255, 205, 130], K2: [255, 185, 110], K5: [255, 150, 85], M: [255, 120, 75], wd: [235, 240, 255] };
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
   // Small seeded random, so each object's preview is stable.
@@ -56,32 +64,31 @@
   }
 
   function drawStar(g, w, h, o, R) {
-    const t = o.t.toLowerCase(), c = TINT[SPEC[o.n] || 'A'];
-    const cx = w / 2, cy = h / 2;
-    const size = t.includes('supergiant') ? 34 : t.includes('giant') ? 26 : 16;
+    const t = o.t.toLowerCase(), [cls, sz, comps] = STARS[o.n] || ['A', 'd', []], c = TINT[cls];
+    const n = comps.length, cx = w / 2 - (n ? 12 : 0), cy = h / 2 + (n ? 6 : 0);
+    const size = SIZE[sz];
     // the disc, with darkened limb
     const gr = g.createRadialGradient(cx - size * 0.2, cy - size * 0.2, 0, cx, cy, size);
     gr.addColorStop(0, rgba([255, 255, 255], 1)); gr.addColorStop(0.45, rgba(c, 1)); gr.addColorStop(1, rgba(c.map(v => v * 0.55), 1));
-    blob(g, cx, cy, size * 2.2, c, 0.35);
+    blob(g, cx, cy, size * 1.9, c, 0.35);
     g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, size, 0, Math.PI * 2); g.fill();
-    if (SPEC[o.n] === 'M' || t.includes('red')) {   // mottled convection cells on cool giants
+    if (cls === 'M' || cls === 'K5') {   // mottled convection cells on cool giants
+      g.save(); g.globalCompositeOperation = 'source-atop';
       for (let i = 0; i < 10; i++) {
         const a = R() * Math.PI * 2, d = R() * size * 0.7;
-        blob(g, cx + Math.cos(a) * d, cy + Math.sin(a) * d, size * 0.35, [120, 40, 20], 0.25);
+        blob(g, cx + Math.cos(a) * d, cy + Math.sin(a) * d, size * 0.35, [120, 40, 20], 0.3);
       }
+      g.restore();
     }
     if (t.includes('ring')) {
-      g.strokeStyle = 'rgba(200,180,150,0.7)'; g.lineWidth = 3;
-      g.beginPath(); g.ellipse(cx, cy, size * 2.6, size * 1.1, -0.3, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = 'rgba(200,180,150,0.7)'; g.lineWidth = 2.5;
+      g.beginPath(); g.ellipse(cx, cy, size * 3, size * 1.2, -0.3, 0, Math.PI * 2); g.stroke();
     }
-    // companions for binaries and multiples
-    const n = /sextuple/.test(t) ? 3 : /quadruple/.test(t) ? 2 : /binary|double|triple|multiple/.test(t) ? 1 : 0;
-    for (let i = 0; i < n + (/triple/.test(t) ? 1 : 0); i++) {
-      const cc = o.n === 'Albireo' ? TINT.B : /white-dwarf|white dwarf/.test(o.i) && i === 0 ? [235, 240, 255] : TINT[['B', 'K', 'M', 'G'][Math.floor(R() * 4)]];
-      const x = cx + size + 14 + i * 16, y = cy - 14 + R() * 28;
-      glow(g, Math.min(w - 8, cx + size * 0.7 + 10 + i * 12), cy - size - 4 + i * 10, /dwarf/.test(o.i) && i === 0 ? 6 : 9, cc);
-    }
-    if (t.includes('planet')) { g.fillStyle = '#5a7088'; g.beginPath(); g.arc(cx - size - 16, cy + 10, 4, 0, Math.PI * 2); g.fill(); }
+    comps.forEach((k, i) => {   // companions, upper right, in their real colours
+      const x = Math.min(w - 10, cx + size + 12 + i * 14), y = cy - size - 6 + i * 12;
+      glow(g, x, Math.max(10, y), k === 'wd' ? 5 : k === 'M' ? 6 : 9, TINT[k]);
+    });
+    if (t.includes('planet')) { g.fillStyle = '#6a8098'; g.beginPath(); g.arc(cx - size - 12, cy + size * 0.6, 3.5, 0, Math.PI * 2); g.fill(); }
   }
 
   function drawCluster(g, w, h, o, R) {
@@ -95,6 +102,11 @@
       }
       return;
     }
+    if (t.includes('asterism')) {   // the Coathanger: a row of six stars with a hook of four below
+      const pts = [[-40, -8], [-24, -6], [-8, -5], [8, -5], [24, -6], [40, -8], [2, 6], [6, 16], [0, 26], [-6, 22]];
+      for (const [x, y] of pts) glow(g, cx + x, cy + y, 5 + R() * 3, R() < 0.7 ? TINT.B : TINT.K, 1);
+      return;
+    }
     const centres = t.includes('pair') ? [[cx - 26, cy], [cx + 26, cy]] : [[cx, cy]];
     const spread = t.includes('cloud') ? 60 : t.includes('pair') ? 18 : 32;
     if (o.s === 'M45') blob(g, cx, cy, 45, [110, 150, 255], 0.35);   // the Pleiades' blue haze
@@ -104,7 +116,7 @@
       for (let i = 0; i < n; i++) {
         const a = R() * Math.PI * 2, r = Math.sqrt(R()) * spread;
         const bright = t.includes('cloud') ? 2.2 + R() * 1.5 : 2 + R() * 5;
-        glow(g, x0 + Math.cos(a) * r * 1.3, y0 + Math.sin(a) * r * 0.9, bright, R() < 0.8 ? TINT.B : TINT.K, 0.9);
+        glow(g, x0 + Math.cos(a) * r * 1.3, y0 + Math.sin(a) * r * 0.9, bright, R() < (o.s === 'Mel 25' ? 0.6 : 0.8) ? TINT.B : TINT.K, 0.9);
       }
     }
   }
@@ -132,10 +144,12 @@
       const a = R() * Math.PI * 2, r = R() * 34;
       blob(g, cx + Math.cos(a) * r * 1.5, cy + Math.sin(a) * r, 14 + R() * 22, i % 4 === 0 && !t.includes('reflection') ? [255, 170, 120] : c, 0.22);
     }
+    g.globalCompositeOperation = 'source-over';
     for (let i = 0; i < 5; i++) {   // dust lanes
-      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 3 + R() * 5;
+      g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 8 + R() * 8; g.lineCap = 'round'; g.filter = 'blur(3px)';
       g.beginPath(); g.moveTo(R() * w, R() * h); g.quadraticCurveTo(R() * w, R() * h, R() * w, R() * h); g.stroke();
     }
+    g.filter = 'none'; g.globalCompositeOperation = 'lighter';
     if (t.includes('star-forming')) for (let i = 0; i < 4; i++) glow(g, cx + (R() - 0.5) * 20, cy + (R() - 0.5) * 14, 6, TINT.B);
   }
 
@@ -154,7 +168,7 @@
       }
     }
     blob(g, 0, 0, 16, [255, 235, 190], 0.95);
-    if (o.s === 'M104' || o.s === 'M64') { g.fillStyle = 'rgba(10,5,5,0.75)'; g.fillRect(-50, o.s === 'M64' ? -8 : -2, 100, 5); }
+    if (o.s === 'M104' || o.s === 'M64') { g.globalCompositeOperation = 'source-over'; g.fillStyle = 'rgba(10,5,5,0.8)'; g.beginPath(); if (o.s === 'M64') g.ellipse(0, -6, 9, 5, 0, 0, Math.PI * 2); else g.ellipse(0, 1, 54, 4, 0, 0, Math.PI * 2); g.fill(); }
     g.restore();
     if (t.includes('starburst')) for (let i = 0; i < 12; i++) blob(g, cx + (R() - 0.5) * 16, cy + (R() - 0.5) * 50, 6 + R() * 8, [255, 70, 70], 0.4);
   }
