@@ -29,7 +29,17 @@
 </div>
 
 <div id="skyCard" hidden role="status" aria-live="polite"></div>
-<div id="trackBar" class="chip" hidden><span></span> <button type="button">Stop</button></div>
+<div id="trackBar" hidden>
+  <div class="track-head"><span class="track-name"></span><button type="button" class="track-stop">Stop</button></div>
+  <div class="track-speed" id="trackSpeed" role="group" aria-label="Time speed">
+    <button type="button" data-t="0">Pause</button>
+    <button type="button" data-t="1">Real time</button>
+    <button type="button" data-t="3600">1 h/s</button>
+    <button type="button" data-t="21600">6 h/s</button>
+    <button type="button" data-t="86400">1 day/s</button>
+    <button type="button" data-t="604800">1 wk/s</button>
+  </div>
+</div>
 
 <div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · L constellations · I sky guide · H hide panel</div>
 

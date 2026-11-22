@@ -280,6 +280,7 @@
   }
 
   const MIN_FOV = 1;       // degrees: close enough to fill the screen with the Moon
+  let tracked = null;   // the sky-guide object the camera follows, if any
   const cam = { yaw: 108 * DEG, pitch: 24 * DEG, fov: 100 * DEG };
   let W = 0, H = 0, DPR = 1, focal = 1;
   let F = [0, 1, 0], R = [1, 0, 0], U = [0, 0, 1];
@@ -394,7 +395,8 @@
   }
 
   function updateCam() {
-    cam.pitch = clamp(cam.pitch, -8 * DEG, 85 * DEG);
+    // While tracking, the view may look straight down to follow an object below the horizon.
+    cam.pitch = clamp(cam.pitch, (tracked ? -89 : -8) * DEG, (tracked ? 89 : 85) * DEG);
     cam.fov = clamp(cam.fov, MIN_FOV * DEG, 120 * DEG);
     cam.yaw = ((cam.yaw % TAU) + TAU) % TAU;
     F = dir(cam.yaw, cam.pitch);
@@ -847,7 +849,7 @@
   // The Sun and the Moon, with the Moon's phase and its bright limb turned toward the Sun.
   function drawSunMoon() {
     const pxPerDeg = focal * DEG;
-    if (moonVec[2] > -0.02) {
+    if (moonVec[2] > -0.02 || tracked === MOON_ITEM) {
       const p = project(moonVec);
       if (p && onScreen(p, 60)) {
         const x = p[0], y = p[1], r = Math.max(2.2, 0.259 * pxPerDeg);
@@ -1242,7 +1244,7 @@
     for (const o of guideItems) {
       const v = o === MOON_ITEM ? moonVec : eqToHor(o.ra * HR, o.dec * DEG, lst);
       o.v = v;
-      if (v[2] < 0) continue;
+      if (v[2] < 0 && o !== tracked) continue;
       const p = project(v);
       if (!p || !onScreen(p, 10)) continue;
       const x = p[0], y = p[1];
@@ -1287,7 +1289,7 @@
       cardFor = o;
       const where = o.kind === 'deep' ? `${o.s}` : o.kind === 'moon' ? 'orbiting Earth' : o.c;
       skyCard.innerHTML = `<h2></h2><div class="kind"></div><dl></dl>
-        <button type="button" class="chip track-btn"></button><p></p>`;
+        <p></p><button type="button" class="chip track-btn"></button>`;
       const tb = skyCard.querySelector('.track-btn');
       tb.addEventListener('click', () => { if (tracked === o) stopTracking(); else startTracking(o); });
       skyCard.querySelector('h2').textContent = hasPhoto(o) ? `${o.n} *` : o.n;
@@ -1330,12 +1332,13 @@
     if (key !== cardLive) {
       cardLive = key;
       skyCard.querySelector('dl').innerHTML = live;
-      skyCard.querySelector('.track-btn').textContent = tracked === o ? 'Stop tracking' : 'Track';
+      skyCard.querySelector('.track-btn').textContent = tracked === o ? 'Stop tracking' : 'Start tracking';
     }
     const cw = skyCard.offsetWidth, ch = skyCard.offsetHeight;
     let x = h.x + 18, y = h.y + 14;
     if (x + cw > W - 12) x = h.x - cw - 18;
-    if (y + ch > H - 12) y = H - ch - 12;
+    const floor = tracked && !trackBar.hidden ? trackBar.getBoundingClientRect().top - 12 : H - 12;   // stay above the tracking bar
+    if (y + ch > floor) y = floor - ch;
     skyCard.style.left = `${Math.max(12, x)}px`;
     skyCard.style.top = `${Math.max(12, y)}px`;
   }
@@ -1429,7 +1432,7 @@
   }
 
   // ------------------------------------------------------------------ loop
-  let last = performance.now(), realT = 0, lastHud = 0;
+  let last = performance.now(), realT = 0, lastHud = 0, landAlpha = 1;
 
   function frame(now) {
     stepFlight(now);
@@ -1497,7 +1500,12 @@
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Tracking an object below the horizon: the land turns see-through so it stays visible.
+    const under = tracked && tracked.v && Math.asin(clamp(tracked.v[2], -1, 1)) <= terrainAt(azOf(tracked.v)) * DEG;
+    landAlpha += ((under ? 0.2 : 1) - landAlpha) * Math.min(1, dtReal * 6);
+    ctx.globalAlpha = landAlpha;
     ctx.drawImage(fg, 0, 0);
+    ctx.globalAlpha = 1;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
     if (flash > 0.002) {   // a fireball lights up the whole landscape
@@ -1731,7 +1739,7 @@
   let lastSpeed = 1;
   function setTime(t) {
     if (t > 0) lastSpeed = t;
-    S.timeScale = t; setSeg(el.timeSeg, 't', t);
+    S.timeScale = t; setSeg(el.timeSeg, 't', t); setSeg($('trackSpeed'), 't', t);
   }
   el.timeSeg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTime(+b.dataset.t); });
   // ---- date, time of day and place
@@ -1922,39 +1930,35 @@
   const stopFlight = () => { flight = null; };
 
   // ---- tracking: keep the camera on one object while time runs
-  let tracked = null;
   const trackBar = $('trackBar');
   function trackDir(o) {
     if (o === MOON_ITEM) { updateLight(); return moonVec; }
     return eqToHor(o.ra * HR, o.dec * DEG, lstNow());
   }
   function startTracking(o) {
-    tracked = o; guidePinned = o; setGuide(true);
+    tracked = o; guidePinned = o; setGuide(true); document.body.classList.add('tracking');
     const fov = o === MOON_ITEM ? Math.min(cam.fov, 8 * DEG) : cam.fov;
     flyTo(() => { const t = trackDir(o); return [azOf(t), Math.asin(clamp(t[2], -1, 1))]; }, fov);
-    trackBar.querySelector('span').textContent = `Tracking ${o.n}`;
+    trackBar.querySelector('.track-name').textContent = `Tracking ${o.n}`;
+    if (S.timeScale === 0) setTime(1);
     trackBar.hidden = false;
   }
-  function stopTracking() { tracked = null; trackBar.hidden = true; cardLive = ''; }
+  function stopTracking() { tracked = null; document.body.classList.remove('tracking'); trackBar.hidden = true; cardLive = ''; }
   function stepTracking() {
     if (!tracked || flight) return;
     const t = trackDir(tracked);
     cam.yaw = azOf(t); cam.pitch = Math.asin(clamp(t[2], -1, 1));
     updateCam();
   }
-  trackBar.querySelector('button').addEventListener('click', stopTracking);
+  trackBar.querySelector('.track-stop').addEventListener('click', stopTracking);
+  trackBar.querySelector('.track-speed').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTime(+b.dataset.t); });
 
   function goToObject(object) {
-    if (object === MOON_ITEM) {
-      if (moonAltDeg < 0) { $('gotoStatus').textContent = `The Moon is ${Math.abs(moonAltDeg).toFixed(1)}° below the horizon at this place and time.`; return; }
-      startTracking(object); guideHover = null; return;
-    }
+    if (object === MOON_ITEM) { startTracking(object); guideHover = null; return; }
     const v = eqToHor(object.ra * HR, object.dec * DEG, lstNow());
     const altitude = Math.asin(clamp(v[2], -1, 1));
-    if (altitude < 0) {
-      $('gotoStatus').textContent = `${object.n} is ${Math.abs(altitude / DEG).toFixed(1)}° below the horizon at this place and time.`;
-      return;
-    }
+    $('gotoStatus').textContent = altitude < 0 ? `${object.n} is ${Math.abs(altitude / DEG).toFixed(1)}° below the horizon now: the land turns see-through while you track it.` : '';
+    if (altitude < 0) { startTracking(object); guideHover = null; return; }
     const photo = window.DeepSkyPhotos?.list.find(p => hasPhoto(object) && (p.code.replace(/\s/g, '') === String(object.s || '').replace(/\s/g, '') || p.name === object.n));
     const fov = photo ? clamp(Math.max(photo.w, photo.h) * 2.2, MIN_FOV, 60) * DEG : cam.fov;   // close enough to show the photo
     // The sky turns while we fly, so the target is worked out afresh every frame.
