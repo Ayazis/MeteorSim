@@ -2041,7 +2041,7 @@
 
   // ---- looking around
   const pointers = new Map();
-  let pinch = null;
+  let pinch = null, gesturePinch = false;
   // A double-click / double-tap toggles the sky guide. Turning it on opens the card of whatever is
   // under the finger; the guide's hit list is built while drawing, so if it was off, wait two frames
   // for it before picking the object.
@@ -2085,12 +2085,13 @@
       S.showRadiant = el.showRadiant.checked = true;
       return;
     }
-    canvas.setPointerCapture(e.pointerId);
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic or already-ended pointer */ }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
     canvas.classList.add('dragging');
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, fov: cam.fov };
+      gesturePinch = true;
       cancelLongPress();
     }
   });
@@ -2106,7 +2107,8 @@
     }
     if (longPress && Math.hypot(e.clientX - longPress.x, e.clientY - longPress.y) > 8) cancelLongPress();
     if (pointers.size === 1) {
-      if (tracked && Math.hypot(e.clientX - prev.x0, e.clientY - prev.y0) > 6) stopTracking();
+      // A pinch starts with one finger down, so only a clear one-finger drag (not part of a pinch) lets go.
+      if (tracked && !gesturePinch && Math.hypot(e.clientX - prev.x0, e.clientY - prev.y0) > 30) stopTracking();
       if (tracked) { prev.x = e.clientX; prev.y = e.clientY; return; }
       cam.yaw -= (e.clientX - prev.x) / focal;
       cam.pitch += (e.clientY - prev.y) / focal;
@@ -2136,7 +2138,7 @@
     }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
-    if (!pointers.size) canvas.classList.remove('dragging');
+    if (!pointers.size) { canvas.classList.remove('dragging'); gesturePinch = false; }
   };
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
