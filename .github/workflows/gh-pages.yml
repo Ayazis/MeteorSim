@@ -1,0 +1,33 @@
+name: Deploy to gh-pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          mkdir _site
+          rsync -a --exclude '.git' --exclude '.github' --exclude '.claude' --exclude '_site' ./ _site/
+          touch _site/.nojekyll
+
+      - name: Publish to gh-pages branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _site
+          branch: gh-pages
+          clean-exclude: pr-preview/
+          force: false
