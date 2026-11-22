@@ -1920,13 +1920,19 @@
   // ---- looking around
   const pointers = new Map();
   let pinch = null;
-  // A double-click / double-tap toggles the sky guide; a long press turns it on. Turning it on opens the card
-  // of whatever is under the finger. The guide's hit list is built while drawing, so if it was off,
-  // wait two frames for it before picking the object.
+  // A double-click / double-tap toggles the sky guide. Turning it on opens the card of whatever is
+  // under the finger; the guide's hit list is built while drawing, so if it was off, wait two frames
+  // for it before picking the object.
   function guideOnAt(x, y) {
     if (S.guide) { guidePinned = guideAt(x, y); return; }
     setGuide(true);
     requestAnimationFrame(() => requestAnimationFrame(() => { guidePinned = guideAt(x, y); }));
+  }
+  // A long press toggles the constellation lines and names.
+  function toggleLines() {
+    el.showLines.checked = !el.showLines.checked;
+    el.showLines.dispatchEvent(new Event('change', { bubbles: true }));
+    skyDirty = true;
   }
   let longPress = null, lastTap = null;
   const cancelLongPress = () => { if (longPress) { clearTimeout(longPress.timer); longPress = null; } };
@@ -1937,7 +1943,7 @@
     cancelLongPress();
     if (!e.shiftKey && !e.altKey) {
       const x = e.clientX, y = e.clientY;
-      longPress = { x, y, timer: setTimeout(() => { longPress = null; pointers.forEach(p => { p.held = true; }); guideOnAt(x, y); }, 550) };
+      longPress = { x, y, timer: setTimeout(() => { longPress = null; pointers.forEach(p => { p.held = true; }); toggleLines(); }, 550) };
     }
     if ((e.shiftKey || e.altKey) && S.shower !== 'sporadic') {
       const v = unproject(e.clientX, e.clientY);
@@ -1986,7 +1992,7 @@
       const now = performance.now();
       if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
         lastTap = null;
-        if (S.guide) setGuide(false);   // a double-click toggles the guide; a long press only turns it on
+        if (S.guide) setGuide(false);   // a double-click toggles the guide
         else guideOnAt(e.clientX, e.clientY);
       } else {
         lastTap = { t: now, x: e.clientX, y: e.clientY };
@@ -2015,7 +2021,7 @@
     else if (k === 'z') document.body.classList.toggle('zen');
     else if (k === 'c') setComet(!S.comet);
     else if (k === 'i') setGuide(!S.guide);
-    else if (k === 'l') { el.showLines.checked = !el.showLines.checked; el.showLines.dispatchEvent(new Event('change', { bubbles: true })); skyDirty = true; }
+    else if (k === 'l') toggleLines();
     else if (k === 'f') $('fullscreen').click();
     else if (k === 'arrowleft') { cam.yaw -= 5 * DEG; updateCam(); }
     else if (k === 'arrowright') { cam.yaw += 5 * DEG; updateCam(); }
