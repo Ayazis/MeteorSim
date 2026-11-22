@@ -30,7 +30,7 @@
 
 <div id="skyCard" hidden role="status" aria-live="polite"></div>
 
-<div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · I sky guide · H hide panel</div>
+<div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · L constellations · I sky guide · H hide panel</div>
 
 <button id="openPanel" class="chip" type="button">Controls</button>
 
@@ -48,6 +48,15 @@
     <input class="field wide" id="gotoSearch" type="search" aria-label="Search sky catalogue" placeholder="Name, constellation or catalogue ID">
     <div class="goto-results" id="gotoResults"></div>
     <p class="note" id="gotoStatus" role="status"></p>
+  </details>
+
+  <details class="control-group" id="labelsMenu" open>
+    <summary>Sky labels</summary>
+  <section>
+    <label class="check"><input type="checkbox" id="showLines"> Constellations: lines and names (L)</label>
+    <label class="check"><input type="checkbox" id="showGuide"> Sky guide: name stars and objects (I)</label>
+    <p class="note">Objects marked * have a photo: zoom in on them to see it.</p>
+  </section>
   </details>
 
   <details class="control-group" open>
@@ -79,8 +88,6 @@
       <button type="button" data-m="view">Just this view</button>
     </div>
     <label class="check"><input type="checkbox" id="showRadiant"> Show the radiant</label>
-    <label class="check"><input type="checkbox" id="showGuide"> Sky guide: name stars and objects (I)</label>
-    <label class="check"><input type="checkbox" id="showLines"> Constellation lines and names</label>
   </section>
   </details>
 

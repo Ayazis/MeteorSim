@@ -1913,6 +1913,7 @@
     else if (k === 'z') document.body.classList.toggle('zen');
     else if (k === 'c') setComet(!S.comet);
     else if (k === 'i') setGuide(!S.guide);
+    else if (k === 'l') { el.showLines.checked = !el.showLines.checked; el.showLines.dispatchEvent(new Event('change', { bubbles: true })); skyDirty = true; }
     else if (k === 'f') $('fullscreen').click();
     else if (k === 'arrowleft') { cam.yaw -= 5 * DEG; updateCam(); }
     else if (k === 'arrowright') { cam.yaw += 5 * DEG; updateCam(); }
