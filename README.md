@@ -6,6 +6,8 @@ A real-time meteor shower and storm simulator, seen from the ground the way a da
 
 Every push to `main` is published to the `gh-pages` branch by `.github/workflows/gh-pages.yml` and served at <https://ayazis.github.io/MeteorSim/>. One-time setup: in the repository's Settings → Pages, set the source to **Deploy from a branch**, branch `gh-pages`, folder `/ (root)`.
 
+Each pull request is also built by `.github/workflows/pr-preview.yml` and served at `https://ayazis.github.io/MeteorSim/pr-preview/pr-<number>/`; a bot comment on the PR links to it, and the preview is removed when the PR closes.
+
 ## Run it
 
 The star map is loaded with WebGL, which browsers block for pages opened straight from disk, so serve the folder:
