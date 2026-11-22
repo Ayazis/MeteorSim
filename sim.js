@@ -279,6 +279,7 @@
     if (key !== lightKey) { lightKey = key; skyDirty = true; }
   }
 
+  const MIN_FOV = 1;       // degrees: close enough to fill the screen with the Moon
   const cam = { yaw: 108 * DEG, pitch: 24 * DEG, fov: 100 * DEG };
   let W = 0, H = 0, DPR = 1, focal = 1;
   let F = [0, 1, 0], R = [1, 0, 0], U = [0, 0, 1];
@@ -297,23 +298,31 @@
   // The real sky, if WebGL2 is available and the star map loads (it can't from file://).
   // The 4K map comes first so the sky appears quickly; big screens then swap in the 8K map.
   const sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
-  let skyReady = false;
+  let skyReady = false, sky8k = null;
+  // The 8K map is fetched once the view needs it: on a big screen, or when zoomed in.
+  function wantSky8k() {
+    if (!sky || !skyReady || sky8k || sky.maxTexture < 8192) return;
+    const longSide = Math.max(W, H) * DPR;
+    const pxPerDeg = longSide / (cam.fov / DEG);        // screen pixels per degree of sky
+    const big = longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
+    if (!big && pxPerDeg < 4096 / 360 * 1.5) return;   // the 4K map still holds up
+    sky8k = sky.load('assets/starmap_8k.jpg')
+      .then(() => { skyDirty = true; })
+      .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
+  }
   if (sky) {
-    const longSide = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1);
-    const big = sky.maxTexture >= 8192 && longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
     sky.load('assets/starmap_4k.jpg')
       .then(() => {
         skyReady = true; skyDirty = true;
         document.body.classList.add('real-sky');
-        if (big) return sky.load('assets/starmap_8k.jpg')
-          .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
+        wantSky8k();
       })
       .catch(err => console.warn('Star map unavailable, using the generated sky.', err));
   }
 
   function updateCam() {
     cam.pitch = clamp(cam.pitch, -8 * DEG, 85 * DEG);
-    cam.fov = clamp(cam.fov, 30 * DEG, 120 * DEG);
+    cam.fov = clamp(cam.fov, MIN_FOV * DEG, 120 * DEG);
     cam.yaw = ((cam.yaw % TAU) + TAU) % TAU;
     F = dir(cam.yaw, cam.pitch);
     R = [Math.cos(cam.yaw), -Math.sin(cam.yaw), 0];
@@ -322,6 +331,7 @@
     skyDirty = true;
     lastCamMove = performance.now();
     drawCompass();
+    wantSky8k();
   }
 
   // ---- compass: a heading tape in the HUD
@@ -689,24 +699,38 @@
 
   // NASA LRO colour map of the Moon (public domain, NASA's Scientific Visualization Studio).
   // The disc is shaded per pixel from it: lit from the Sun's side, with earthshine on the rest.
-  const moonMap = { data: null, w: 0, h: 0 };
-  {
+  // Three sizes: 1K straight away, then 2K and 4K only once the Moon is drawn big enough to show them.
+  const MOON_MAPS = [[1024, 'assets/moon_1k.jpg'], [2048, 'assets/moon_2k.jpg'], [4096, 'assets/moon_4k.jpg']];
+  const moonMap = { data: null, w: 0, h: 0, loading: 0 };
+  function loadMoonMap(width, url) {
+    moonMap.loading = width;
     const img = new Image();
     img.onload = () => {
       const c = document.createElement('canvas');
       c.width = img.width; c.height = img.height;
       const x = c.getContext('2d', { willReadFrequently: true });
       x.drawImage(img, 0, 0);
-      moonMap.data = x.getImageData(0, 0, c.width, c.height).data;
-      moonMap.w = c.width; moonMap.h = c.height;
+      if (img.width > moonMap.w) {
+        moonMap.data = x.getImageData(0, 0, c.width, c.height).data;
+        moonMap.w = c.width; moonMap.h = c.height; moonKey = '';
+      }
+      moonMap.loading = 0;
     };
-    img.src = 'assets/moon_2k.jpg';
+    img.onerror = () => { console.warn('Moon map unavailable:', url); moonMap.loading = 0; };
+    img.src = url;
+  }
+  loadMoonMap(...MOON_MAPS[0]);
+  // A disc n pixels across shows about half the map's width, so it wants roughly 2n texels round.
+  function wantMoonMap(n) {
+    if (moonMap.loading || !moonMap.data) return;
+    const next = MOON_MAPS.find(([w]) => w > moonMap.w);
+    if (next && n * 2.2 > moonMap.w) loadMoonMap(...next);
   }
   const moonDisc = document.createElement('canvas');
   const moonDiscCtx = moonDisc.getContext('2d');
   let moonKey = '';
   function renderMoonDisc(n, sunAng, northAng, k, earthshine, cool) {
-    const key = [n, sunAng.toFixed(2), northAng.toFixed(2), k.toFixed(3), earthshine.toFixed(2), cool].join();
+    const key = [moonMap.w, n, sunAng.toFixed(2), northAng.toFixed(2), k.toFixed(3), earthshine.toFixed(2), cool].join();
     if (key === moonKey) return moonDisc;
     moonKey = key;
     if (moonDisc.width !== n) { moonDisc.width = moonDisc.height = n; }
@@ -768,7 +792,8 @@
           const nv = norm([ncp[0] - moonVec[0] * cn, ncp[1] - moonVec[1] * cn, ncp[2] - moonVec[2] * cn]);
           const qn = project(norm([moonVec[0] + nv[0] * 0.01, moonVec[1] + nv[1] * 0.01, moonVec[2] + nv[2] * 0.01]));
           const northAng = qn ? Math.atan2(qn[1] - y, qn[0] - x) : -Math.PI / 2;
-          const n = Math.max(8, Math.min(256, Math.ceil(2 * r * DPR)));
+          const n = Math.max(8, Math.min(1024, Math.ceil(2 * r * DPR)));
+          wantMoonMap(n);
           const disc = renderMoonDisc(n, ang, northAng, k, 0.045 * (1 - dayF), dayF > 0.5);
           ctx.globalAlpha = 1;
           ctx.drawImage(disc, x - r, y - r, 2 * r, 2 * r);
