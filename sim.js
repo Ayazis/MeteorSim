@@ -1256,7 +1256,7 @@
       const active = o === guideHover || o === guidePinned || o === tracked;
       if (!active && !narrow && (deep ? o.m > 7 : o.m > 1.7)) { guideHits.push({ o, x, y }); continue; }
       const a = (hidden ? 0.35 : 0.75) * (active ? 1.3 : 1);
-      ctx.strokeStyle = deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
+      ctx.strokeStyle = window.SkyCategories ? SkyCategories.color(o, a) : deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
       ctx.lineWidth = 1;
       const r = o === MOON_ITEM ? Math.max(9, 0.27 * DEG * focal + 4) : deep ? 9 : 7;
       ctx.beginPath();
@@ -1291,7 +1291,8 @@
     if (cardFor !== o) {
       cardFor = o;
       const where = o.kind === 'deep' ? `${o.s}` : o.kind === 'moon' ? 'orbiting Earth' : o.c;
-      skyCard.innerHTML = `<h2></h2><div class="kind"></div><dl></dl>
+      const cat = window.SkyCategories;
+      skyCard.innerHTML = `<div class="head">${cat ? `<img class="preview" alt="" src="${cat.preview(o)}">` : ''}<div>${cat ? `<span class="cat" style="--c:${cat.color(o, 1)}">${cat.CATS[cat.category(o)].label}</span>` : ''}<h2></h2><div class="kind"></div></div></div><dl></dl>
         <p></p><button type="button" class="chip track-btn"></button>`;
       const tb = skyCard.querySelector('.track-btn');
       tb.addEventListener('click', () => { if (tracked === o) stopTracking(); else startTracking(o); });
@@ -1425,8 +1426,10 @@
       auroraVisibility: S.aurora * (1 - smooth(-16, -3, sunAltDeg)) * (0.3 + 0.7 * smooth(2, 7, S.lm)),
       exposure: 1.7,
       starBoost: 2.2,
-      // the faint end of the map sinks into a brighter sky
-      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * (REF_LM - lmNow)) - 1)),
+      // The faint end of the map sinks into a brighter sky. The map's pixel values grow more slowly
+      // than star flux, so the cut has to rise faster than the sky (exponent 1.35, fitted so that a
+      // Bortle 9 sky shows only stars to about magnitude 3.3).
+      thresh: Math.max(0, 0.011 * (Math.pow(10, 0.4 * 1.35 * (REF_LM - lmNow)) - 1)),
       pollution: col.t,
       domeAz: DOME_AZ,
       zen: toLinear(col.zen), hor: toLinear(col.hor), dome: toLinear(col.dome), ground: toLinear(col.ground),
