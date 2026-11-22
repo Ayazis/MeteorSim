@@ -82,7 +82,7 @@ uniform sampler2D uTileMap0;   // per map tile of each level: 0 = not loaded, el
 uniform sampler2D uTileMap1;
 uniform vec4 uTileGrid0;       // level 0 (e.g. 32K): cols, rows, map width in px, 0 = off
 uniform vec4 uTileGrid1;       // level 1 (e.g. 64K), finer
-uniform vec3 uTileAtlas;       // slots per side, slot size, tile size (px)
+uniform vec4 uTileAtlas;       // slots across, slots down, slot size, tile size (px)
 uniform sampler2D uAurora;
 uniform float uAuroraVisibility;
 uniform vec2 uRes;
@@ -120,7 +120,7 @@ vec4 tileLevel(sampler2D map, vec4 grid, vec2 uv, float span) {
   if (slot < -0.5) return vec4(0.0);
   vec2 local = uv * grid.xy - vec2(cell);
   vec2 sxy = vec2(mod(slot, uTileAtlas.x), floor(slot / uTileAtlas.x));
-  vec2 auv = (sxy * uTileAtlas.y + 1.0 + local * uTileAtlas.z) / (uTileAtlas.x * uTileAtlas.y);
+  vec2 auv = (sxy * uTileAtlas.z + 1.0 + local * uTileAtlas.w) / (uTileAtlas.xy * uTileAtlas.z);
   return vec4(textureLod(uTiles, auv, 0.0).rgb, w);
 }
 
@@ -326,7 +326,8 @@ void main() {
       const texture = uniforms.uSky.value;
       if (texture) texture.needsUpdate = true;
       auroraTarget.dispose();
-      initTileGL();   // the old GL objects are gone; tiles are fetched again (from the cache)
+      // the old GL objects are gone: start empty; tiles are fetched again (from the cache) as needed
+      if (tiles?.gpu) { tiles.gpu = false; tiles.entries.clear(); tiles.uploads = []; for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value.w = 0; }
       listeners.restored.forEach(fn => fn());
     });
 
@@ -361,12 +362,12 @@ void main() {
     // seen give way. The atlas and the slot lookups are raw WebGL textures handed to three.js.
     const MAX_LEVELS = 2;
     uniforms.uTiles = { value: new THREE.Texture() };
-    uniforms.uTileAtlas = { value: new THREE.Vector3(1, 1, 1) };
+    uniforms.uTileAtlas = { value: new THREE.Vector4(1, 1, 1, 1) };
     for (let i = 0; i < MAX_LEVELS; i++) {
       uniforms['uTileMap' + i] = { value: new THREE.Texture() };
       uniforms['uTileGrid' + i] = { value: new THREE.Vector4(1, 1, 1, 0) };
     }
-    let tiles = null;   // { levels, slotPx, tile, grid, slots, entries, free, uploads, inflight, atlasTex, wanted }
+    let tiles = null;   // { levels, slotPx, tile, maxGrid, grid, slots, gpu, entries, free, uploads, inflight, atlasTex, wanted }
     let tileGen = 0;
     const gl = renderer.getContext();
     const LEVEL_KEY = 1 << 20;   // entry key = level * LEVEL_KEY + row * cols + col
@@ -390,25 +391,43 @@ void main() {
       gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     }
-    // (Re)create the GPU side; all slots start empty. Also run after the context comes back.
-    function initTileGL() {
-      if (!tiles) return;
+    // Slots for the tiles that can be in view on this canvas. Tiles fade in only once a tile pixel
+    // covers half a screen pixel or more, so a tile spans at least tile/2 screen pixels: a screen
+    // W wide holds at most ceil(W / span) + 1 of them across. A quarter more for the coarser level
+    // (its tiles cover four times the sky) that stands in while the finer one loads.
+    function gridFor(w, h) {
+      const span = tiles.tile / 2;
+      let need = (Math.ceil(w / span) + 1) * (Math.ceil(h / span) + 1);
+      if (tiles.levels.length > 1) need = Math.ceil(need * 1.25);
+      need = Math.min(need, 255, tiles.maxGrid * tiles.maxGrid);   // the lookup stores 1 + slot in a byte
+      const across = Math.min(tiles.maxGrid, Math.ceil(Math.sqrt(need)));
+      return { across, down: Math.ceil(need / across) };
+    }
+    // Create the GPU side for a grid of slots; all slots start empty. Run the first time tiles
+    // are needed, when the canvas grows past what the atlas holds, and after the context comes back.
+    function initTileGL(grid) {
+      releaseTileGL();
       tileGen++;
-      const size = tiles.grid * tiles.slotPx;
-      tiles.atlasTex = rawTexture(uniforms.uTiles.value, size, size, gl.SRGB8_ALPHA8, gl.LINEAR);
+      tiles.grid = grid;
+      tiles.slots = grid.across * grid.down;
+      tiles.atlasTex = rawTexture(uniforms.uTiles.value, grid.across * tiles.slotPx, grid.down * tiles.slotPx, gl.SRGB8_ALPHA8, gl.LINEAR);
       tiles.levels.forEach((lv, i) => {
         lv.mapTex = rawTexture(uniforms['uTileMap' + i].value, lv.cols, lv.rows, gl.R8, gl.NEAREST);
         lv.map.fill(0);
         lv.mapDirty = true;
+        uniforms['uTileGrid' + i].value.set(lv.cols, lv.rows, lv.width, 1);
       });
+      uniforms.uTileAtlas.value.set(grid.across, grid.down, tiles.slotPx, tiles.tile);
       tiles.entries.clear();
       tiles.free = Array.from({ length: tiles.slots }, (_, i) => tiles.slots - 1 - i);
       tiles.uploads = [];
       tiles.inflight = 0;
+      tiles.gpu = true;
     }
-    function dropTileGL() {
-      if (!tiles) return;
-      if (!lost) {
+    // Free the GPU side (if any); the tile set stays configured and can create it again.
+    function releaseTileGL() {
+      if (!tiles || !tiles.gpu) return;
+      if (!lost && !gl.isContextLost()) {
         gl.deleteTexture(tiles.atlasTex);
         tiles.levels.forEach(lv => gl.deleteTexture(lv.mapTex));
       }
@@ -418,12 +437,20 @@ void main() {
       }
       for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value.w = 0;
       for (const t of tiles.uploads) t.img.close?.();
+      tiles.uploads = [];
+      tiles.entries.clear();
+      tiles.gpu = false;
+      tileGen++;
+    }
+    function dropTileGL() {
+      releaseTileGL();
       tiles = null;
       tileGen++;
     }
 
     // bases: folders made by slice_starmap.py (each with tiles.json), coarse to fine, all with the
     // same tile size; empty or null turns tiles off. Levels that fail to load are left out.
+    // Nothing goes to the GPU until the view is zoomed in far enough to need a tile.
     async function setTiles(bases) {
       dropTileGL();
       bases = (bases || []).slice(0, MAX_LEVELS);
@@ -432,14 +459,12 @@ void main() {
       if (!infos.length) return false;
       const slotPx = infos[0].tile + 2 * infos[0].pad;
       const levels = infos.filter(info => info.tile + 2 * info.pad === slotPx && info.cols * info.rows < LEVEL_KEY);
-      const grid = Math.min(8, Math.floor(renderer.capabilities.maxTextureSize / slotPx));
-      if (grid < 3) return false;
+      const maxGrid = Math.min(15, Math.floor(renderer.capabilities.maxTextureSize / slotPx));
+      if (maxGrid < 3) return false;
       dropTileGL();   // in case two calls overlapped
       tiles = { levels: levels.map(lv => ({ ...lv, map: new Uint8Array(lv.cols * lv.rows) })),
-        slotPx, tile: levels[0].tile, grid, slots: grid * grid, entries: new Map(), wanted: [] };
-      initTileGL();
-      tiles.levels.forEach((lv, i) => uniforms['uTileGrid' + i].value.set(lv.cols, lv.rows, lv.width, 1));
-      uniforms.uTileAtlas.value.set(grid, slotPx, tiles.tile);
+        slotPx, tile: levels[0].tile, maxGrid, grid: null, slots: 0, gpu: false,
+        entries: new Map(), uploads: [], free: [], inflight: 0, wanted: [] };
       return true;
     }
 
@@ -474,7 +499,7 @@ void main() {
         }
         out.push(...[...found].sort((a, b) => a[1] - b[1]).map(e => e[0]));
       });
-      return out.slice(0, tiles.slots);
+      return out;
     }
 
     function fetchTile(key, now, wanted) {
@@ -514,12 +539,24 @@ void main() {
 
     function updateTiles(u) {
       if (!tiles) return;
+      let list = visibleTiles(u);
       const now = performance.now();
+      if (!list.length) {
+        // Not zoomed in: no GPU memory used. After zooming back out, the atlas is kept for a
+        // while (zooming in again is instant), then freed.
+        tiles.wanted = [];
+        if (!tiles.gpu) return;
+        tiles.idleSince ||= now;
+        if (now - tiles.idleSince > 30000) { releaseTileGL(); return; }
+      } else tiles.idleSince = 0;
+      const grid = gridFor(canvas.width, canvas.height);
+      if (!tiles.gpu || grid.across * grid.down > tiles.slots) initTileGL(grid);   // first deep zoom, or a bigger canvas
+      list = list.slice(0, tiles.slots);
       // upload a couple of finished tiles per frame, so a burst of arrivals doesn't stall one frame
       for (let n = 0; n < 2 && tiles.uploads.length; n++) {
         const { key, entry, img } = tiles.uploads.shift();
         if (tiles.entries.get(key) !== entry) { img.close?.(); continue; }
-        const sx = entry.slot % tiles.grid, sy = Math.floor(entry.slot / tiles.grid);
+        const sx = entry.slot % tiles.grid.across, sy = Math.floor(entry.slot / tiles.grid.across);
         renderer.state.bindTexture(gl.TEXTURE_2D, tiles.atlasTex);
         unpackPlain();
         gl.texSubImage2D(gl.TEXTURE_2D, 0, sx * tiles.slotPx, sy * tiles.slotPx, gl.RGBA, gl.UNSIGNED_BYTE, img);
@@ -528,7 +565,6 @@ void main() {
         setSlot(key, entry.slot + 1);
       }
       if (tiles.uploads.length) listeners.tile.forEach(fn => fn());
-      const list = visibleTiles(u);
       tiles.wanted = list;
       const wanted = new Set(list);
       for (const key of list) {
