@@ -327,7 +327,7 @@ void main() {
       if (texture) texture.needsUpdate = true;
       auroraTarget.dispose();
       // the old GL objects are gone: start empty; tiles are fetched again (from the cache) as needed
-      if (tiles?.gpu) { tiles.gpu = false; tiles.entries.clear(); tiles.uploads = []; for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value.w = 0; }
+      if (tiles?.gpu) { tiles.gpu = false; tiles.entries.clear(); tiles.uploads = []; for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value[3] = 0; }
       listeners.restored.forEach(fn => fn());
     });
 
@@ -362,10 +362,10 @@ void main() {
     // seen give way. The atlas and the slot lookups are raw WebGL textures handed to three.js.
     const MAX_LEVELS = 2;
     uniforms.uTiles = { value: new THREE.Texture() };
-    uniforms.uTileAtlas = { value: new THREE.Vector4(1, 1, 1, 1) };
+    uniforms.uTileAtlas = { value: [1, 1, 1, 1] };   // plain arrays: this three.js build has no Vector4
     for (let i = 0; i < MAX_LEVELS; i++) {
       uniforms['uTileMap' + i] = { value: new THREE.Texture() };
-      uniforms['uTileGrid' + i] = { value: new THREE.Vector4(1, 1, 1, 0) };
+      uniforms['uTileGrid' + i] = { value: [1, 1, 1, 0] };
     }
     let tiles = null;   // { levels, slotPx, tile, maxGrid, grid, slots, gpu, entries, free, uploads, inflight, atlasTex, wanted }
     let tileGen = 0;
@@ -415,9 +415,9 @@ void main() {
         lv.mapTex = rawTexture(uniforms['uTileMap' + i].value, lv.cols, lv.rows, gl.R8, gl.NEAREST);
         lv.map.fill(0);
         lv.mapDirty = true;
-        uniforms['uTileGrid' + i].value.set(lv.cols, lv.rows, lv.width, 1);
+        uniforms['uTileGrid' + i].value = [lv.cols, lv.rows, lv.width, 1];
       });
-      uniforms.uTileAtlas.value.set(grid.across, grid.down, tiles.slotPx, tiles.tile);
+      uniforms.uTileAtlas.value = [grid.across, grid.down, tiles.slotPx, tiles.tile];
       tiles.entries.clear();
       tiles.free = Array.from({ length: tiles.slots }, (_, i) => tiles.slots - 1 - i);
       tiles.uploads = [];
@@ -435,7 +435,7 @@ void main() {
         renderer.properties.remove(uniforms[name].value);
         uniforms[name].value = new THREE.Texture();
       }
-      for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value.w = 0;
+      for (let i = 0; i < MAX_LEVELS; i++) uniforms['uTileGrid' + i].value[3] = 0;
       for (const t of tiles.uploads) t.img.close?.();
       tiles.uploads = [];
       tiles.entries.clear();
