@@ -169,15 +169,17 @@
       <dl class="stats">${rows.map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl>
       <p class="note">${e.note}</p>
       <p class="ic-view">Seen from ${e.obsKm < 10 ? e.obsKm + ' km' : '~' + e.obsKm + ' km'} away${e.peakSun >= 1 ? `, peaking ~${fmtSun(e.peakSun)} brighter than the Sun` : ''}.</p>
-      <div class="ic-actions"><button type="button" class="chip" data-a="replay">Replay</button>
+      <div class="ic-actions"><button type="button" class="chip ic-more" data-a="details">Details</button><button type="button" class="chip" data-a="replay">Replay</button>
       <button type="button" class="chip" data-a="close">Close</button></div>`;
+    card.classList.remove('open');
     card.hidden = false;
   }
   function fmtSun(x) { return x >= 1000 ? `10${sup(Math.round(Math.log10(x)))}×` : `${Math.round(x)}×`; }
   function sup(n) { return String(n).split('').map(c => '⁰¹²³⁴⁵⁶⁷⁸⁹'[+c]).join(''); }
   card.addEventListener('click', ev => {
     const a = ev.target.closest('[data-a]'); if (!a) return;
-    if (a.dataset.a === 'replay' && cur) play(cur.e); else stop();
+    if (a.dataset.a === 'details') { card.classList.toggle('open'); a.textContent = card.classList.contains('open') ? 'Less' : 'Details'; }
+    else if (a.dataset.a === 'replay' && cur) play(cur.e); else stop();
   });
   window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && cur) stop(); });
 
@@ -221,6 +223,7 @@
       end: Math.max(e.dur + 14, shockAt + 6) + (e.ejecta ? 10 : 0), shaken: false,
     };
     document.body.classList.add('impact-on');
+    window.MeteorSim.setPanel?.(false);   // get the panel out of the way of the replay
     renderCard(e);
     caption.textContent = ''; caption.classList.remove('show');
     document.querySelectorAll('#impactList button').forEach(b => b.setAttribute('aria-pressed', b.dataset.id === e.id));

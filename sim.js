@@ -2162,6 +2162,7 @@
    * A 'meteorsim-ready' event fires on window once this API exists.
    */
   const API = {
+    setPanel,
     get realSky() { return skyLive(); },
     get skyTexture() { return sky ? sky.textureSize : 0; },
     // true once the star map is the sharpest this device will get (8K, or 4K where 8K can't be used)

@@ -467,3 +467,14 @@ input.tod { margin-top: 10px; }
 /* long press on the sky opens the sky guide, not the browser's callout or text selection */
 #sky { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
 #skyCard .zoom-link { color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer; }
+
+/* An impact replay takes the whole view: the rate readout and hints step aside. */
+body.impact-on #hud, body.impact-on #hint { opacity: 0; pointer-events: none; }
+#impactCard .ic-more { display: none; }
+@media (max-width: 700px) {
+  /* On a phone the replay gets the screen: the card shows just the name until asked for details. */
+  #impactCard .ic-more { display: inline-flex; }
+  #impactCard:not(.open) .stats, #impactCard:not(.open) .note, #impactCard:not(.open) .ic-view { display: none; }
+  #impactCard:not(.open) h2 { margin-bottom: 8px; }
+  body.impact-on #compass { opacity: 0; pointer-events: none; }
+}
