@@ -34,7 +34,7 @@
   };
   const SIZE = { d: 14, g: 22, b: 27, s: 33 };
   const TINT = { O: [160, 185, 255], B: [175, 200, 255], A: [230, 238, 255], F: [255, 250, 230], G: [255, 236, 180],
-    K: [255, 205, 130], K2: [255, 185, 110], K5: [255, 105, 65], M: [235, 70, 50], wd: [235, 240, 255] };
+    K: [255, 205, 130], K2: [255, 185, 110], K5: [235, 35, 25], M: [225, 25, 20], wd: [235, 240, 255] };
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
   // Small seeded random, so each object's preview is stable.
@@ -69,10 +69,11 @@
     const size = SIZE[sz];
     // the disc, with darkened limb
     const gr = g.createRadialGradient(cx - size * 0.2, cy - size * 0.2, 0, cx, cy, size);
-    gr.addColorStop(0, rgba([255, 255, 255], 1)); gr.addColorStop(0.45, rgba(c, 1)); gr.addColorStop(1, rgba(c.map(v => v * 0.55), 1));
+    const red = cls === 'M' || cls === 'K5';   // red stars: no white-hot centre, so they read as red
+    gr.addColorStop(0, rgba(red ? [255, 90, 70] : [255, 255, 255], 1)); gr.addColorStop(0.45, rgba(c, 1)); gr.addColorStop(1, rgba(c.map(v => v * 0.55), 1));
     blob(g, cx, cy, size * 1.9, c, 0.35);
     g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, size, 0, Math.PI * 2); g.fill();
-    if (cls === 'M' || cls === 'K5') {   // mottled convection cells on cool giants
+    if (red) {   // mottled convection cells on cool giants
       g.save(); g.globalCompositeOperation = 'source-atop';
       for (let i = 0; i < 10; i++) {
         const a = R() * Math.PI * 2, d = R() * size * 0.7;
