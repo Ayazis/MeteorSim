@@ -1287,7 +1287,7 @@
   function updateCard() {
     const o = guideHover || guidePinned || tracked;
     const h = o && guideHits.find(g => g.o === o);
-    if (!S.guide || !h) { skyCard.hidden = true; cardFor = null; return; }
+    if (!S.guide || !h || (tracked === o && infoHidden)) { skyCard.hidden = true; cardFor = null; return; }
     if (cardFor !== o) {
       cardFor = o;
       const where = o.kind === 'deep' ? `${o.s}` : o.kind === 'moon' ? 'orbiting Earth' : o.c;
@@ -1342,8 +1342,12 @@
     // While tracking, the object sits at the centre: pin the card to a fixed spot so it doesn't jitter.
     const ax = tracked === o ? W / 2 : h.x, ay = tracked === o ? H / 2 : h.y;
     let x = Math.round(ax + 18), y = Math.round(ay + 14);
+    // On a narrow screen, put the tracked object's card at the bottom, clear of the object.
+    if (tracked === o && W <= 700) { x = 16; y = H; }
     if (x + cw > W - 12) x = Math.round(ax - cw - 18);
-    const floor = tracked && !trackBar.hidden ? trackBar.getBoundingClientRect().top - 12 : H - 12;   // stay above the tracking bar
+    const tbr = trackBar.hidden ? null : trackBar.getBoundingClientRect();
+    const floor = tbr && tbr.top > H / 2 ? tbr.top - 12 : H - 12;   // stay above the speed bar at the bottom
+    const ceil = tbr && tbr.top <= H / 2 ? tbr.bottom + 12 : 12;    // or below it when it is at the top (phones)   // stay above the tracking bar
     if (y + ch > floor) y = floor - ch;
     // While tracking, hold the card still: only move it if it would no longer fit.
     if (tracked === o) {
@@ -1351,7 +1355,7 @@
       else cardPin = { o, W, H, x, y: Math.max(12, Math.min(y, floor - ch - 40)) }, y = cardPin.y;
     } else cardPin = null;
     skyCard.style.left = `${Math.max(12, x)}px`;
-    skyCard.style.top = `${Math.max(12, y)}px`;
+    skyCard.style.top = `${Math.max(ceil, y)}px`;
   }
 
   // Composite the meteor layer with a soft bloom, as bright light scatters in the eye.
@@ -1953,10 +1957,26 @@
     const fov = o === MOON_ITEM ? Math.min(cam.fov, 8 * DEG) : cam.fov;
     flyTo(() => { const t = trackDir(o); return [azOf(t), Math.asin(clamp(t[2], -1, 1))]; }, fov);
     trackBar.querySelector('.track-name').textContent = `Tracking ${o.n}`;
+    trackBar.querySelector('.track-stop').hidden = false;
+    // On a phone the card covers the view, so it starts hidden there.
+    setInfoHidden(matchMedia('(max-width: 700px)').matches);
     if (S.timeScale === 0) setTime(1);
     trackBar.hidden = false;
   }
-  function stopTracking() { tracked = null; document.body.classList.remove('tracking'); trackBar.hidden = true; cardLive = ''; }
+  // Stopping keeps the speed controls up (time keeps running); the × closes them.
+  function stopTracking() {
+    if (!tracked) return;
+    tracked = null; document.body.classList.remove('tracking'); cardLive = '';
+    trackBar.querySelector('.track-name').textContent = 'Time speed';
+    trackBar.querySelector('.track-stop').hidden = true;
+    trackBar.querySelector('.track-info').hidden = true;
+  }
+  let infoHidden = false;
+  function setInfoHidden(on) {
+    infoHidden = on;
+    const b = trackBar.querySelector('.track-info');
+    b.hidden = false; b.classList.toggle('on', !on); b.setAttribute('aria-pressed', String(!on));
+  }
   function stepTracking() {
     if (!tracked || flight) return;
     const t = trackDir(tracked);
@@ -1965,6 +1985,8 @@
     const lcm = lastCamMove; updateCam(); lastCamMove = lcm;
   }
   trackBar.querySelector('.track-stop').addEventListener('click', stopTracking);
+  trackBar.querySelector('.track-info').addEventListener('click', () => setInfoHidden(!infoHidden));
+  trackBar.querySelector('.track-close').addEventListener('click', () => { stopTracking(); trackBar.hidden = true; });
   trackBar.querySelector('.track-speed').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTime(+b.dataset.t); });
 
   function goToObject(object) {
