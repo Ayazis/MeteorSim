@@ -687,6 +687,60 @@
     ctx.restore();
   }
 
+  // NASA LRO colour map of the Moon (public domain, NASA's Scientific Visualization Studio).
+  // The disc is shaded per pixel from it: lit from the Sun's side, with earthshine on the rest.
+  const moonMap = { data: null, w: 0, h: 0 };
+  {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0);
+      moonMap.data = x.getImageData(0, 0, c.width, c.height).data;
+      moonMap.w = c.width; moonMap.h = c.height;
+    };
+    img.src = 'assets/moon_2k.jpg';
+  }
+  const moonDisc = document.createElement('canvas');
+  const moonDiscCtx = moonDisc.getContext('2d');
+  let moonKey = '';
+  function renderMoonDisc(n, sunAng, northAng, k, earthshine, cool) {
+    const key = [n, sunAng.toFixed(2), northAng.toFixed(2), k.toFixed(3), earthshine.toFixed(2), cool].join();
+    if (key === moonKey) return moonDisc;
+    moonKey = key;
+    if (moonDisc.width !== n) { moonDisc.width = moonDisc.height = n; }
+    const out = moonDiscCtx.createImageData(n, n), o = out.data;
+    const { data, w, h } = moonMap;
+    const ci = 2 * k - 1, si = Math.sqrt(Math.max(0, 1 - ci * ci));
+    const lx = Math.cos(sunAng) * si, ly = Math.sin(sunAng) * si, lz = ci;
+    const nx = Math.cos(northAng), ny = Math.sin(northAng), ex = -ny, ey = nx;
+    const tint = cool ? [0.94, 0.97, 1.02] : [1.04, 1.0, 0.93];
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const u = (i + 0.5) / n * 2 - 1, v = (j + 0.5) / n * 2 - 1, rr = u * u + v * v;
+        const idx = (j * n + i) * 4;
+        if (rr >= 1) { o[idx + 3] = 0; continue; }
+        const z = Math.sqrt(1 - rr);
+        const yl = -(u * nx + v * ny), xl = u * ex + v * ey;   // lunar north up, east to the right
+        const lon = Math.atan2(xl, z), lat = Math.asin(Math.max(-1, Math.min(1, -yl)));
+        const tx = Math.min(w - 1, Math.floor((0.5 + lon / TAU) * w));
+        const ty = Math.min(h - 1, Math.floor((0.5 - lat / Math.PI) * h));
+        const t = (ty * w + tx) * 4;
+        // Lommel-Seeliger: the Moon's dusty surface looks almost flat-lit, with a soft terminator.
+        const mu0 = u * lx + v * ly + z * lz;
+        const lit = mu0 > 0 ? 2 * mu0 / (mu0 + z) : 0;
+        const soft = Math.min(1, Math.max(0, (mu0 + 0.03) / 0.06));
+        const b = Math.max(lit * soft * 0.75, earthshine) * 1.5;
+        for (let c = 0; c < 3; c++) o[idx + c] = Math.min(255, data[t + c] * b * tint[c]);
+        // a slightly soft limb for antialiasing
+        o[idx + 3] = 255 * Math.min(1, (1 - Math.sqrt(rr)) * n * 0.5);
+      }
+    }
+    moonDiscCtx.putImageData(out, 0, 0);
+    return moonDisc;
+  }
+
   // The Sun and the Moon, with the Moon's phase and its bright limb turned toward the Sun.
   function drawSunMoon() {
     const pxPerDeg = focal * DEG;
@@ -707,18 +761,31 @@
         ctx.globalAlpha = (0.08 + 0.4 * k * k) * night;
         ctx.drawImage(glow, x - g, y - g, g * 2, g * 2);
         ctx.globalCompositeOperation = 'source-over';
-        ctx.translate(x, y); ctx.rotate(ang);
-        // earthshine on the dark part
-        ctx.globalAlpha = 0.16 * (1 - dayF);
-        ctx.fillStyle = 'rgb(70,80,100)';
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
-        const e = (2 * k - 1) * r;
-        ctx.globalAlpha = 0.97;
-        ctx.fillStyle = dayF > 0.5 ? 'rgb(236,240,248)' : 'rgb(250,246,232)';
-        ctx.beginPath();
-        ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
-        ctx.ellipse(0, 0, Math.max(0.01, Math.abs(e)), r, 0, Math.PI / 2, e >= 0 ? 1.5 * Math.PI : -Math.PI / 2, e < 0);
-        ctx.fill();
+        if (moonMap.data) {
+          // screen direction of celestial north at the Moon, which sets the lunar map's orientation
+          const ncp = [0, Math.cos(LAT), Math.sin(LAT)];
+          const cn = dot(ncp, moonVec);
+          const nv = norm([ncp[0] - moonVec[0] * cn, ncp[1] - moonVec[1] * cn, ncp[2] - moonVec[2] * cn]);
+          const qn = project(norm([moonVec[0] + nv[0] * 0.01, moonVec[1] + nv[1] * 0.01, moonVec[2] + nv[2] * 0.01]));
+          const northAng = qn ? Math.atan2(qn[1] - y, qn[0] - x) : -Math.PI / 2;
+          const n = Math.max(8, Math.min(256, Math.ceil(2 * r * DPR)));
+          const disc = renderMoonDisc(n, ang, northAng, k, 0.045 * (1 - dayF), dayF > 0.5);
+          ctx.globalAlpha = 1;
+          ctx.drawImage(disc, x - r, y - r, 2 * r, 2 * r);
+        } else {
+          ctx.translate(x, y); ctx.rotate(ang);
+          // earthshine on the dark part
+          ctx.globalAlpha = 0.16 * (1 - dayF);
+          ctx.fillStyle = 'rgb(70,80,100)';
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+          const e = (2 * k - 1) * r;
+          ctx.globalAlpha = 0.97;
+          ctx.fillStyle = dayF > 0.5 ? 'rgb(236,240,248)' : 'rgb(250,246,232)';
+          ctx.beginPath();
+          ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+          ctx.ellipse(0, 0, Math.max(0.01, Math.abs(e)), r, 0, Math.PI / 2, e >= 0 ? 1.5 * Math.PI : -Math.PI / 2, e < 0);
+          ctx.fill();
+        }
         ctx.restore();
       }
     }
