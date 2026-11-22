@@ -229,8 +229,9 @@ void main() {
     float dl = length(uDome) + 1e-5;
     vec3 domeCol = uDome / dl;                                // colour, without the town's strength
     sky += uDome * pol * exp(-ah / 13.0) * (0.25 + 0.75 * pow(t1, 3.0));
-    sky += dl * pol * led * 0.55 * exp(-ah / 8.0) * pow(t2, 14.0);
-    float farGlow = 0.0011 * (0.3 + 0.7 * (1.0 - smoothstep(-0.25, -0.05, uSunDir.z)));
+    sky += sodium * 0.0090 * exp(-ah / 7.0) * pow(t1, 10.0);
+    sky += (dl * pol * 0.55 + 0.0018) * led * exp(-ah / 7.0) * pow(t2, 14.0);
+    float farGlow = 0.0035 * (0.3 + 0.7 * (1.0 - smoothstep(-0.25, -0.05, uSunDir.z)));
     sky += (sodium * 0.7 + domeCol * 0.3) * (farGlow + dl * pol * 0.4) * exp(-ah / 4.5) * pow(t3, 22.0);
   }
 
