@@ -1247,7 +1247,7 @@
       const active = o === guideHover || o === guidePinned;
       if (!active && !narrow && (deep ? o.m > 7 : o.m > 1.7)) { guideHits.push({ o, x, y }); continue; }
       const a = (hidden ? 0.35 : 0.75) * (active ? 1.3 : 1);
-      ctx.strokeStyle = deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
+      ctx.strokeStyle = window.SkyCategories ? SkyCategories.color(o, a) : deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
       ctx.lineWidth = 1;
       const r = deep ? 9 : 7;
       ctx.beginPath();
@@ -1284,7 +1284,8 @@
       const v = o.v, alt = Math.asin(clamp(v[2], -1, 1)) / DEG;
       const az = ((Math.atan2(v[0], v[1]) / DEG) + 360) % 360;
       const where = o.kind === 'deep' ? `${o.s}` : o.c;
-      skyCard.innerHTML = `<h2></h2><div class="kind"></div><dl>
+      const cat = window.SkyCategories;
+      skyCard.innerHTML = `<div class="head">${cat ? `<img class="preview" alt="" src="${cat.preview(o)}">` : ''}<div>${cat ? `<span class="cat" style="--c:${cat.color(o, 1)}">${cat.CATS[cat.category(o)].label}</span>` : ''}<h2></h2><div class="kind"></div></div></div><dl>
         <dt>Distance</dt><dd>${fmtLy(o.d)}</dd>
         <dt>Brightness</dt><dd>magnitude ${o.m.toFixed(1)}${o.m > lmNow ? ' · too faint for this sky' : ''}</dd>
         <dt>Position</dt><dd>${Math.round(alt)}° up, ${COMPASS[Math.round(az / 45) % 8]} (${Math.round(az)}°)</dd>
