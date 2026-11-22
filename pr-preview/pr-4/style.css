@@ -488,6 +488,6 @@ input.tod { margin-top: 10px; }
   #trackBar button { padding: 10px 12px; min-height: 44px; }
   #trackBar .track-play { width: 48px; height: 48px; }
   #trackBar .track-slider { height: 44px; }
-  body.tracking #skyCard p, body.tracking #skyCard .preview { display: none; }
+  body.tracking #skyCard p, body.tracking #skyCard .preview, body.tracking #skyCard .track-btn { display: none; }   /* the bar has Stop */
   body.tracking #skyCard { max-width: calc(100vw - 32px); }
 }
