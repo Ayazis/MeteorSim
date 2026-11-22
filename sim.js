@@ -1413,6 +1413,7 @@
   let last = performance.now(), realT = 0, lastHud = 0;
 
   function frame(now) {
+    stepFlight(now);
     render(now);
     requestAnimationFrame(frame);
   }
@@ -1873,6 +1874,31 @@
   });
   const search = $('gotoSearch');
   const results = $('gotoResults');
+  // Smooth camera flight: pan and zoom together, easing in and out. The zoom is interpolated
+  // on a log scale so it feels even from 100° down to 1°. Any drag, pinch or scroll stops it.
+  let flight = null;
+  const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  function flyTo(target, fov) {
+    const [yaw1, pitch1] = target();
+    const dYaw = ((yaw1 - cam.yaw + 3 * Math.PI) % TAU) - Math.PI;   // the short way round
+    const dist = Math.hypot(dYaw * Math.cos(pitch1), pitch1 - cam.pitch) / DEG + Math.abs(Math.log(fov / cam.fov)) * 25;
+    const ms = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : clamp(700 + dist * 8, 800, 2000);
+    flight = { target, yaw0: cam.yaw, pitch0: cam.pitch, fov0: cam.fov, fov1: fov, t0: performance.now(), ms };
+    if (!ms) stepFlight(flight.t0 + 1);
+  }
+  function stepFlight(now) {
+    if (!flight) return;
+    const f = flight, u = f.ms ? clamp((now - f.t0) / f.ms, 0, 1) : 1, k = ease(u);
+    const [yaw1, pitch1] = f.target();
+    const dYaw = ((yaw1 - f.yaw0 + 3 * Math.PI) % TAU) - Math.PI;
+    cam.yaw = f.yaw0 + dYaw * k;
+    cam.pitch = f.pitch0 + (pitch1 - f.pitch0) * k;
+    cam.fov = f.fov0 * Math.pow(f.fov1 / f.fov0, k);
+    updateCam(); syncFov();
+    if (u >= 1) flight = null;
+  }
+  const stopFlight = () => { flight = null; };
+
   function goToObject(object) {
     const v = eqToHor(object.ra * HR, object.dec * DEG, lstNow());
     const altitude = Math.asin(clamp(v[2], -1, 1));
@@ -1880,12 +1906,10 @@
       $('gotoStatus').textContent = `${object.n} is ${Math.abs(altitude / DEG).toFixed(1)}° below the horizon at this place and time.`;
       return;
     }
-    cam.yaw = azOf(v);
-    cam.pitch = altitude;
     const photo = window.DeepSkyPhotos?.list.find(p => hasPhoto(object) && (p.code.replace(/\s/g, '') === String(object.s || '').replace(/\s/g, '') || p.name === object.n));
-    if (photo) cam.fov = clamp(Math.max(photo.w, photo.h) * 2.2, MIN_FOV, 60) * DEG;   // close enough to show the photo
-    updateCam();
-    syncFov();
+    const fov = photo ? clamp(Math.max(photo.w, photo.h) * 2.2, MIN_FOV, 60) * DEG : cam.fov;   // close enough to show the photo
+    // The sky turns while we fly, so the target is worked out afresh every frame.
+    flyTo(() => { const t = eqToHor(object.ra * HR, object.dec * DEG, lstNow()); return [azOf(t), Math.asin(clamp(t[2], -1, 1))]; }, fov);
     setGuide(true);
     guideHover = null;
     guidePinned = object.kind ? object : null;
@@ -1956,6 +1980,7 @@
   canvas.addEventListener('contextmenu', e => e.preventDefault());   // a long press must not open a menu
 
   canvas.addEventListener('pointerdown', e => {
+    stopFlight();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     cancelLongPress();
     if (!e.shiftKey && !e.altKey) {
@@ -2025,6 +2050,7 @@
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
+    stopFlight();
     cam.fov *= Math.exp(e.deltaY * 0.0012);
     updateCam(); syncFov();
   }, { passive: false });
