@@ -312,6 +312,15 @@
       .then(() => { if (gen === skyGen) { skyDirty = true; updateResInfo(); } })
       .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
   }
+  // Supermax: the 32K and 64K maps in tiles, fetched only for what is in view once the coarser map runs out of detail.
+  const SUPERMAX_TILES = ['assets/sky32k', 'assets/sky64k'];
+  function applySupermax() {
+    if (!sky) return;
+    const gen = skyGen;
+    sky.setTiles(SUPERMAX_TILES)
+      .then(ok => { if (gen === skyGen) { skyDirty = true; updateResInfo(); if (!ok) console.warn('Supermax tiles need a larger GPU texture size; keeping the 8K map.'); } })
+      .catch(err => console.warn('Supermax star map tiles unavailable.', err));
+  }
   function skyLost() {
     document.body.classList.remove('real-sky');
     skyDirty = true;
@@ -328,6 +337,8 @@
       console.warn('WebGL context lost: drawing the generated sky until it comes back.');
       skyLost();
     });
+    sky.on('tile', () => { if (gen === skyGen) { skyDirty = true; updateResInfo(); } });
+    applySupermax();
     sky.on('restored', () => {
       if (gen !== skyGen) return;
       if (skyReady) document.body.classList.add('real-sky');
@@ -388,7 +399,9 @@
   function updateResInfo() {
     if (!hudRes || !resInfoReady) return;
     const f = cam.fov / DEG;
-    const stars = skyLive() ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    let stars = skyLive() ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    const ti = skyLive() ? sky.tileInfo : null;
+    if (ti && ti.wanted) stars += ` + ${kLabel(ti.width)} tiles` + (ti.ready < ti.wanted ? ` ${ti.ready}/${ti.wanted}…` : '');
     const moonTxt = kLabel(moonMap.w) + (moonMap.loading ? ` → ${kLabel(moonMap.loading)}…` : '');
     hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · star map ${stars} · Moon ${moonTxt}`;
   }

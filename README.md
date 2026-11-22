@@ -39,7 +39,8 @@ Then open <http://localhost:8765>. Opened from disk, it still works, but with a 
 - `sim.js`: the simulation (meteors, landscape, comet, controls) and a generated-sky fallback.
 - `skygl.js`: the WebGL2 renderer for the real sky.
 - `assets/starmap_8k.jpg`, `assets/starmap_4k.jpg`: the star map. The 8K version loads on large screens.
+- `assets/sky32k/`, `assets/sky64k/`: the 32K and 64K star maps cut into 512 and 2048 tiles. Only the tiles in view load, once zoomed in past what the coarser map can show; 32K tiles fill in first, then 64K on top. Made with `tools/slice_starmap.py` from NASA's `starmap_2020_32k.exr` and `starmap_2020_64k.exr`.
 
 ## Credits
 
-Star map: NASA/Goddard Space Flight Center Scientific Visualization Studio, [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/). Gaia DR2: ESA/Gaia/DPAC. Converted from the 8K OpenEXR original to sRGB JPEG.
+Star map: NASA/Goddard Space Flight Center Scientific Visualization Studio, [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/). Gaia DR2: ESA/Gaia/DPAC. Converted from the 8K, 32K and 64K OpenEXR originals to sRGB JPEG.
