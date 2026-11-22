@@ -1945,6 +1945,10 @@
   trackBar.querySelector('button').addEventListener('click', stopTracking);
 
   function goToObject(object) {
+    if (object === MOON_ITEM) {
+      if (moonAltDeg < 0) { $('gotoStatus').textContent = `The Moon is ${Math.abs(moonAltDeg).toFixed(1)}° below the horizon at this place and time.`; return; }
+      startTracking(object); guideHover = null; return;
+    }
     const v = eqToHor(object.ra * HR, object.dec * DEG, lstNow());
     const altitude = Math.asin(clamp(v[2], -1, 1));
     if (altitude < 0) {
