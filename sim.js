@@ -2007,6 +2007,44 @@
   });
   $('closePanel').addEventListener('click', () => setPanel(false));
   $('openPanel').addEventListener('click', () => setPanel(true));
+  // Swipe the panel away: down on phones (bottom sheet), right on wider screens.
+  {
+    const panel = $('panel');
+    let sx = 0, sy = 0, axis = null, d = 0, startTop = 0;
+    const vertical = () => window.innerWidth < 700;
+    panel.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) { axis = 'none'; return; }
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      startTop = panel.scrollTop; axis = null; d = 0;
+    }, { passive: true });
+    panel.addEventListener('touchmove', e => {
+      if (axis === 'none') return;
+      const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+      if (!axis) {
+        if (Math.hypot(dx, dy) < 10) return;
+        const inHead = e.target.closest('.panel-head');
+        const sliders = e.target.closest('input[type=range]');
+        if (sliders) { axis = 'none'; return; }
+        if (vertical() && Math.abs(dy) > Math.abs(dx) && dy > 0 && (startTop <= 0 || inHead)) axis = 'y';
+        else if (!vertical() && Math.abs(dx) > Math.abs(dy) && dx > 0) axis = 'x';
+        else { axis = 'none'; return; }
+        panel.classList.add('dragging');
+      }
+      d = Math.max(0, axis === 'y' ? dy : dx);
+      if (e.cancelable) e.preventDefault();
+      panel.style.transform = axis === 'y' ? `translateY(${d}px)` : `translateX(${d}px)`;
+    }, { passive: false });
+    const end = () => {
+      if (axis !== 'x' && axis !== 'y') return;
+      panel.classList.remove('dragging');
+      panel.style.transform = '';
+      const size = axis === 'y' ? panel.offsetHeight : panel.offsetWidth;
+      if (d > Math.min(100, size * 0.3)) { setPanel(false); $('openPanel').focus(); }
+      axis = null;
+    };
+    panel.addEventListener('touchend', end);
+    panel.addEventListener('touchcancel', end);
+  }
 
   // ---- looking around
   const pointers = new Map();
