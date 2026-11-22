@@ -279,6 +279,7 @@
     if (key !== lightKey) { lightKey = key; skyDirty = true; }
   }
 
+  const MIN_FOV = 1;       // degrees: close enough to fill the screen with the Moon
   const cam = { yaw: 108 * DEG, pitch: 24 * DEG, fov: 100 * DEG };
   let W = 0, H = 0, DPR = 1, focal = 1;
   let F = [0, 1, 0], R = [1, 0, 0], U = [0, 0, 1];
@@ -286,7 +287,6 @@
 
   const canvas = document.getElementById('sky');
   const ctx = canvas.getContext('2d');
-  const glCanvas = document.getElementById('skygl');
   const bg = document.createElement('canvas'); const bgx = bg.getContext('2d'); // generated sky (fallback) and comet
   const fg = document.createElement('canvas'); const fgx = fg.getContext('2d'); // landscape
   const ml = document.createElement('canvas'); const mx = ml.getContext('2d');  // meteors and trains
@@ -296,24 +296,106 @@
 
   // The real sky, if WebGL2 is available and the star map loads (it can't from file://).
   // The 4K map comes first so the sky appears quickly; big screens then swap in the 8K map.
-  const sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
-  let skyReady = false;
-  if (sky) {
-    const longSide = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1);
-    const big = sky.maxTexture >= 8192 && longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
+  let glCanvas = document.getElementById('skygl');
+  let sky = null, skyReady = false, sky8k = null, skyGen = 0;
+  // The WebGL sky is usable: loaded, and its context not lost. Otherwise the 2D canvas draws a generated sky.
+  const skyLive = () => !!(sky && skyReady && !sky.lost);
+  // The 8K map is fetched once the view needs it: on a big screen, or when zoomed in.
+  function wantSky8k() {
+    if (!sky || !skyReady || sky8k || sky.maxTexture < 8192) return;
+    const longSide = Math.max(W, H) * DPR;
+    const pxPerDeg = longSide / (cam.fov / DEG);        // screen pixels per degree of sky
+    const big = longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
+    if (!big && pxPerDeg < 4096 / 360 * 1.5) return;   // the 4K map still holds up
+    const gen = skyGen;
+    sky8k = sky.load('assets/starmap_8k.jpg')
+      .then(() => { if (gen === skyGen) { skyDirty = true; updateResInfo(); } })
+      .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
+  }
+  function skyLost() {
+    document.body.classList.remove('real-sky');
+    skyDirty = true;
+    updateResInfo();
+  }
+  // Start (or restart) the WebGL sky on the current canvas and load the star map into it.
+  function startSky() {
+    const gen = ++skyGen;
+    skyReady = false; sky8k = null;
+    sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
+    if (!sky) return;
+    sky.on('lost', () => {
+      if (gen !== skyGen) return;
+      console.warn('WebGL context lost: drawing the generated sky until it comes back.');
+      skyLost();
+    });
+    sky.on('restored', () => {
+      if (gen !== skyGen) return;
+      if (skyReady) document.body.classList.add('real-sky');
+      skyDirty = true;
+      updateResInfo();
+    });
     sky.load('assets/starmap_4k.jpg')
       .then(() => {
+        if (gen !== skyGen) return;
         skyReady = true; skyDirty = true;
         document.body.classList.add('real-sky');
-        if (big) return sky.load('assets/starmap_8k.jpg')
-          .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
+        wantSky8k();
+        updateResInfo();
       })
       .catch(err => console.warn('Star map unavailable, using the generated sky.', err));
+  }
+  // Switching apps on a phone can kill the context for good (iOS rarely gives it back).
+  // When the page is shown again, or on a slow heartbeat, a context that stays dead for a
+  // moment is replaced: a fresh canvas, a fresh renderer, and the star map loaded again
+  // (from the browser cache, so it is quick).
+  function rebuildSky(why) {
+    console.warn(`Rebuilding the WebGL sky: ${why}.`);
+    sky.dispose();
+    const fresh = glCanvas.cloneNode(false);
+    fresh.width = glCanvas.width; fresh.height = glCanvas.height;
+    glCanvas.replaceWith(fresh);
+    glCanvas = fresh;
+    skyLost();
+    startSky();
+  }
+  let deadSince = 0;
+  function checkSky() {
+    if (!sky || document.hidden) { deadSince = 0; return; }
+    if (!sky.lost) { deadSince = 0; return; }
+    const now = performance.now();
+    if (!deadSince) { deadSince = now; return; }
+    if (now - deadSince < 1200) return;
+    deadSince = 0;
+    rebuildSky('the context did not come back');
+  }
+  // Phones can also drop the star map from graphics memory while the app is in the background
+  // without reporting the context as lost, leaving a dark sky with no stars. So after the page has
+  // been hidden, the sky is always rebuilt and the map loaded again (from the browser cache).
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = performance.now(); return; }
+    if (sky && hiddenAt && performance.now() - hiddenAt > 400) rebuildSky('the page was in the background');
+    hiddenAt = 0;
+  });
+  window.addEventListener('pageshow', e => { if (e.persisted && sky) rebuildSky('restored from the back-forward cache'); });
+  setInterval(checkSky, 1000);
+  startSky();
+
+  // What is on screen: field of view and which map sizes are in use (or still loading).
+  const hudRes = document.getElementById('hudRes');
+  const kLabel = w => w ? `${Math.round(w / 1024)}K` : '–';
+  let resInfoReady = false;   // the Moon's map state is declared further down
+  function updateResInfo() {
+    if (!hudRes || !resInfoReady) return;
+    const f = cam.fov / DEG;
+    const stars = skyLive() ? kLabel(sky.textureSize) + (sky8k && sky.textureSize < 8192 ? ' → 8K…' : '') : 'generated';
+    const moonTxt = kLabel(moonMap.w) + (moonMap.loading ? ` → ${kLabel(moonMap.loading)}…` : '');
+    hudRes.textContent = `FOV ${f < 10 ? f.toFixed(1) : Math.round(f)}° · star map ${stars} · Moon ${moonTxt}`;
   }
 
   function updateCam() {
     cam.pitch = clamp(cam.pitch, -8 * DEG, 85 * DEG);
-    cam.fov = clamp(cam.fov, 30 * DEG, 120 * DEG);
+    cam.fov = clamp(cam.fov, MIN_FOV * DEG, 120 * DEG);
     cam.yaw = ((cam.yaw % TAU) + TAU) % TAU;
     F = dir(cam.yaw, cam.pitch);
     R = [Math.cos(cam.yaw), -Math.sin(cam.yaw), 0];
@@ -322,6 +404,8 @@
     skyDirty = true;
     lastCamMove = performance.now();
     drawCompass();
+    wantSky8k();
+    updateResInfo();
   }
 
   // ---- compass: a heading tape in the HUD
@@ -556,7 +640,7 @@
 
   function renderBg(quick) {
     const c = bgx;
-    if (sky && skyReady) {
+    if (skyLive()) {
       // The real sky is drawn by WebGL; this layer only carries the comet.
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.clearRect(0, 0, bg.width, bg.height);
@@ -687,6 +771,79 @@
     ctx.restore();
   }
 
+  // NASA LRO colour map of the Moon (public domain, NASA's Scientific Visualization Studio).
+  // The disc is shaded per pixel from it: lit from the Sun's side, with earthshine on the rest.
+  // Three sizes: 1K straight away, then 2K and 4K only once the Moon is drawn big enough to show them.
+  // Phones stop at 2K: the 4K map alone takes 64 MB of memory once decoded.
+  const MOON_MAPS = [[1024, 'assets/moon_1k.jpg'], [2048, 'assets/moon_2k.jpg'], [4096, 'assets/moon_4k.jpg']]
+    .slice(0, matchMedia('(pointer: coarse)').matches ? 2 : 3);
+  const moonMap = { data: null, w: 0, h: 0, loading: 0 };
+  function loadMoonMap(width, url) {
+    moonMap.loading = width;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0);
+      if (img.width > moonMap.w) {
+        moonMap.data = x.getImageData(0, 0, c.width, c.height).data;
+        moonMap.w = c.width; moonMap.h = c.height; moonKey = '';
+      }
+      moonMap.loading = 0;
+      updateResInfo();
+    };
+    img.onerror = () => { console.warn('Moon map unavailable:', url); moonMap.loading = 0; updateResInfo(); };
+    img.src = url;
+    updateResInfo();
+  }
+  resInfoReady = true;
+  loadMoonMap(...MOON_MAPS[0]);
+  // A disc n pixels across shows about half the map's width, so it wants roughly 2n texels round.
+  function wantMoonMap(n) {
+    if (moonMap.loading || !moonMap.data) return;
+    const next = MOON_MAPS.find(([w]) => w > moonMap.w);
+    if (next && n * 2.2 > moonMap.w) loadMoonMap(...next);
+  }
+  const moonDisc = document.createElement('canvas');
+  const moonDiscCtx = moonDisc.getContext('2d');
+  let moonKey = '';
+  function renderMoonDisc(n, sunAng, northAng, k, earthshine, cool) {
+    const key = [moonMap.w, n, sunAng.toFixed(2), northAng.toFixed(2), k.toFixed(3), earthshine.toFixed(2), cool].join();
+    if (key === moonKey) return moonDisc;
+    moonKey = key;
+    if (moonDisc.width !== n) { moonDisc.width = moonDisc.height = n; }
+    const out = moonDiscCtx.createImageData(n, n), o = out.data;
+    const { data, w, h } = moonMap;
+    const ci = 2 * k - 1, si = Math.sqrt(Math.max(0, 1 - ci * ci));
+    const lx = Math.cos(sunAng) * si, ly = Math.sin(sunAng) * si, lz = ci;
+    const nx = Math.cos(northAng), ny = Math.sin(northAng), ex = -ny, ey = nx;
+    const tint = cool ? [0.94, 0.97, 1.02] : [1.04, 1.0, 0.93];
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const u = (i + 0.5) / n * 2 - 1, v = (j + 0.5) / n * 2 - 1, rr = u * u + v * v;
+        const idx = (j * n + i) * 4;
+        if (rr >= 1) { o[idx + 3] = 0; continue; }
+        const z = Math.sqrt(1 - rr);
+        const yl = -(u * nx + v * ny), xl = u * ex + v * ey;   // lunar north up, east to the right
+        const lon = Math.atan2(xl, z), lat = Math.asin(Math.max(-1, Math.min(1, -yl)));
+        const tx = Math.min(w - 1, Math.floor((0.5 + lon / TAU) * w));
+        const ty = Math.min(h - 1, Math.floor((0.5 - lat / Math.PI) * h));
+        const t = (ty * w + tx) * 4;
+        // Lommel-Seeliger: the Moon's dusty surface looks almost flat-lit, with a soft terminator.
+        const mu0 = u * lx + v * ly + z * lz;
+        const lit = mu0 > 0 ? 2 * mu0 / (mu0 + z) : 0;
+        const soft = Math.min(1, Math.max(0, (mu0 + 0.03) / 0.06));
+        const b = Math.max(lit * soft * 0.75, earthshine) * 1.5;
+        for (let c = 0; c < 3; c++) o[idx + c] = Math.min(255, data[t + c] * b * tint[c]);
+        // a slightly soft limb for antialiasing
+        o[idx + 3] = 255 * Math.min(1, (1 - Math.sqrt(rr)) * n * 0.5);
+      }
+    }
+    moonDiscCtx.putImageData(out, 0, 0);
+    return moonDisc;
+  }
+
   // The Sun and the Moon, with the Moon's phase and its bright limb turned toward the Sun.
   function drawSunMoon() {
     const pxPerDeg = focal * DEG;
@@ -707,18 +864,32 @@
         ctx.globalAlpha = (0.08 + 0.4 * k * k) * night;
         ctx.drawImage(glow, x - g, y - g, g * 2, g * 2);
         ctx.globalCompositeOperation = 'source-over';
-        ctx.translate(x, y); ctx.rotate(ang);
-        // earthshine on the dark part
-        ctx.globalAlpha = 0.16 * (1 - dayF);
-        ctx.fillStyle = 'rgb(70,80,100)';
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
-        const e = (2 * k - 1) * r;
-        ctx.globalAlpha = 0.97;
-        ctx.fillStyle = dayF > 0.5 ? 'rgb(236,240,248)' : 'rgb(250,246,232)';
-        ctx.beginPath();
-        ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
-        ctx.ellipse(0, 0, Math.max(0.01, Math.abs(e)), r, 0, Math.PI / 2, e >= 0 ? 1.5 * Math.PI : -Math.PI / 2, e < 0);
-        ctx.fill();
+        if (moonMap.data) {
+          // screen direction of celestial north at the Moon, which sets the lunar map's orientation
+          const ncp = [0, Math.cos(LAT), Math.sin(LAT)];
+          const cn = dot(ncp, moonVec);
+          const nv = norm([ncp[0] - moonVec[0] * cn, ncp[1] - moonVec[1] * cn, ncp[2] - moonVec[2] * cn]);
+          const qn = project(norm([moonVec[0] + nv[0] * 0.01, moonVec[1] + nv[1] * 0.01, moonVec[2] + nv[2] * 0.01]));
+          const northAng = qn ? Math.atan2(qn[1] - y, qn[0] - x) : -Math.PI / 2;
+          const n = Math.max(8, Math.min(1024, Math.ceil(2 * r * DPR)));
+          wantMoonMap(n);
+          const disc = renderMoonDisc(n, ang, northAng, k, 0.045 * (1 - dayF), dayF > 0.5);
+          ctx.globalAlpha = 1;
+          ctx.drawImage(disc, x - r, y - r, 2 * r, 2 * r);
+        } else {
+          ctx.translate(x, y); ctx.rotate(ang);
+          // earthshine on the dark part
+          ctx.globalAlpha = 0.16 * (1 - dayF);
+          ctx.fillStyle = 'rgb(70,80,100)';
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+          const e = (2 * k - 1) * r;
+          ctx.globalAlpha = 0.97;
+          ctx.fillStyle = dayF > 0.5 ? 'rgb(236,240,248)' : 'rgb(250,246,232)';
+          ctx.beginPath();
+          ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+          ctx.ellipse(0, 0, Math.max(0.01, Math.abs(e)), r, 0, Math.PI / 2, e >= 0 ? 1.5 * Math.PI : -Math.PI / 2, e < 0);
+          ctx.fill();
+        }
         ctx.restore();
       }
     }
@@ -1074,7 +1245,7 @@
       const deep = o.kind === 'deep';
       const hidden = o.m > lmNow;   // too faint to see under this sky
       const active = o === guideHover || o === guidePinned;
-      if (!active && !narrow && !deep && o.m > 1.7) { guideHits.push({ o, x, y }); continue; }
+      if (!active && !narrow && (deep ? o.m > 7 : o.m > 1.7)) { guideHits.push({ o, x, y }); continue; }
       const a = (hidden ? 0.35 : 0.75) * (active ? 1.3 : 1);
       ctx.strokeStyle = deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
       ctx.lineWidth = 1;
@@ -1084,7 +1255,7 @@
       else { ctx.arc(x, y, r, 0, TAU); ctx.stroke(); }
       ctx.fillStyle = ctx.strokeStyle;
       ctx.font = `${active ? 500 : 400} 11.5px Inter, system-ui, sans-serif`;
-      ctx.fillText(deep ? `${o.n}` : o.n, x, y - r - 5);
+      ctx.fillText(hasPhoto(o) ? `${o.n} *` : o.n, x, y - r - 5);
       guideHits.push({ o, x, y });
     }
     ctx.restore();
@@ -1100,6 +1271,10 @@
   }
   const skyCard = document.getElementById('skyCard');
   let cardFor = null;
+  // Objects with a deep-sky photo get an asterisk (deepsky.js loads after this file, so look it up late).
+  const hasPhoto = o => !!(window.DeepSkyPhotos && window.DeepSkyPhotos.has(o));
+  const PHOTO_NOTE = '* Photo available: zoom in to see it';
+
   function updateCard() {
     const o = guideHover || guidePinned;
     const h = o && guideHits.find(g => g.o === o);
@@ -1114,9 +1289,28 @@
         <dt>Brightness</dt><dd>magnitude ${o.m.toFixed(1)}${o.m > lmNow ? ' · too faint for this sky' : ''}</dd>
         <dt>Position</dt><dd>${Math.round(alt)}° up, ${COMPASS[Math.round(az / 45) % 8]} (${Math.round(az)}°)</dd>
         </dl><p></p>`;
-      skyCard.querySelector('h2').textContent = o.n;
-      skyCard.querySelector('.kind').textContent = `${o.t} · ${where}`;
+      skyCard.querySelector('h2').textContent = hasPhoto(o) ? `${o.n} *` : o.n;
+      const kind = skyCard.querySelector('.kind');
+      kind.textContent = `${o.t} · ${where}`;
+      if (hasPhoto(o)) {
+        // "zoom in" is a button: it flies the view in on the object so the photo shows.
+        const zoom = document.createElement('a');
+        zoom.href = '#'; zoom.className = 'zoom-link'; zoom.textContent = 'zoom in';
+        zoom.addEventListener('click', e => { e.preventDefault(); goToObject(o); });
+        kind.append(' · * Photo available: ', zoom, ' to see it');
+      }
       skyCard.querySelector('p').textContent = o.i;
+      const photo = window.DeepSkyPhotos?.find(o);
+      if (photo) {
+        // Where the photo comes from, with a link to its page (credit and licence are there too).
+        const line = document.createElement('div');
+        line.className = 'photo-src';
+        const a = document.createElement('a');
+        a.href = photo.src; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = 'View source ↗';
+        line.append(`Photo: ${photo.credit} (CC BY 4.0) · `, a);
+        skyCard.append(line);
+      }
       skyCard.hidden = false;
     }
     const cw = skyCard.offsetWidth, ch = skyCard.offsetHeight;
@@ -1219,6 +1413,7 @@
   let last = performance.now(), realT = 0, lastHud = 0;
 
   function frame(now) {
+    stepFlight(now);
     render(now);
     requestAnimationFrame(frame);
   }
@@ -1242,7 +1437,7 @@
       while (nextSpawn <= simT && n < 3000) { if (Math.random() < radFactor) spawnOne(); nextSpawn += expRand(S.rate); n++; }
       if (n >= 3000) resetSpawn();
     }
-    const real = !!(sky && skyReady);
+    const real = skyLive();
     if (skyDirty) {
       const moving = now - lastCamMove < 150;
       renderBg(moving); renderFg();
@@ -1679,6 +1874,33 @@
   });
   const search = $('gotoSearch');
   const results = $('gotoResults');
+  // Smooth camera flight, eased in and out. Pan and zoom run together and end together over a
+  // fixed time, so a longer pan simply moves faster. The zoom follows a log scale (even from 100°
+  // to 1°) but never gets narrower than three times the distance still to pan (across the short side of the screen), so the object
+  // stays in view while the view turns toward it. Any drag, pinch or scroll stops the flight;
+  // with reduced motion requested it is just quicker.
+  let flight = null;
+  const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  function flyTo(target, fov) {
+    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.5 : 1;
+    flight = { target, yaw0: cam.yaw, pitch0: cam.pitch, fov0: cam.fov, fov1: fov, t0: performance.now(), ms: 1800 * quick };
+  }
+  function stepFlight(now) {
+    if (!flight) return;
+    const f = flight, u = clamp((now - f.t0) / f.ms, 0, 1), k = ease(u);
+    const [yaw1, pitch1] = f.target();
+    const dYaw = ((yaw1 - f.yaw0 + 3 * Math.PI) % TAU) - Math.PI;
+    cam.yaw = f.yaw0 + dYaw * k;
+    cam.pitch = f.pitch0 + (pitch1 - f.pitch0) * k;
+    const left = (1 - k) * Math.hypot(dYaw * Math.cos(pitch1), pitch1 - f.pitch0);   // pan still to go, radians
+    const zoomed = f.fov0 * Math.pow(f.fov1 / f.fov0, k);
+    const aspect = Math.max(W, H) / Math.max(1, Math.min(W, H));   // fov spans the long side; keep it on the short one
+    cam.fov = f.fov1 < f.fov0 ? Math.min(f.fov0, Math.max(zoomed, 3 * left * aspect)) : zoomed;
+    updateCam(); syncFov();
+    if (u >= 1) flight = null;
+  }
+  const stopFlight = () => { flight = null; };
+
   function goToObject(object) {
     const v = eqToHor(object.ra * HR, object.dec * DEG, lstNow());
     const altitude = Math.asin(clamp(v[2], -1, 1));
@@ -1686,9 +1908,10 @@
       $('gotoStatus').textContent = `${object.n} is ${Math.abs(altitude / DEG).toFixed(1)}° below the horizon at this place and time.`;
       return;
     }
-    cam.yaw = azOf(v);
-    cam.pitch = altitude;
-    updateCam();
+    const photo = window.DeepSkyPhotos?.list.find(p => hasPhoto(object) && (p.code.replace(/\s/g, '') === String(object.s || '').replace(/\s/g, '') || p.name === object.n));
+    const fov = photo ? clamp(Math.max(photo.w, photo.h) * 2.2, MIN_FOV, 60) * DEG : cam.fov;   // close enough to show the photo
+    // The sky turns while we fly, so the target is worked out afresh every frame.
+    flyTo(() => { const t = eqToHor(object.ra * HR, object.dec * DEG, lstNow()); return [azOf(t), Math.asin(clamp(t[2], -1, 1))]; }, fov);
     setGuide(true);
     guideHover = null;
     guidePinned = object.kind ? object : null;
@@ -1696,8 +1919,11 @@
     setPanel(false);
     $('openPanel').focus();
   }
+  // The list only opens once something is typed.
   function renderCatalogue() {
-    const query = fold(search.value);
+    const query = fold(search.value.trim());
+    results.hidden = !query;
+    if (!query) { results.replaceChildren(); $('gotoStatus').textContent = ''; return; }
     const matches = catalogue.filter(entry => entry.search.includes(query));
     const rank = entry => entry.name === query ? 0 : entry.name.startsWith(query) ? 1 : 2;
     matches.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
@@ -1705,9 +1931,11 @@
     for (const {object, detail} of matches) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = object.n;
+      const photo = hasPhoto(object);
+      button.textContent = photo ? `${object.n} *` : object.n;
+      if (photo) button.title = PHOTO_NOTE;
       const small = document.createElement('small');
-      small.textContent = detail;
+      small.textContent = photo ? `${detail} · photo` : detail;
       button.append(small);
       button.onclick = () => goToObject(object);
       results.append(button);
@@ -1720,17 +1948,47 @@
     if (e.key === 'Enter') results.firstElementChild?.click();
     if (e.key === 'ArrowDown') { e.preventDefault(); results.firstElementChild?.focus(); }
   });
-  $('gotoMenu').addEventListener('toggle', () => {
-    if ($('gotoMenu').open) { renderCatalogue(); search.focus(); }
-  });
   $('closePanel').addEventListener('click', () => setPanel(false));
   $('openPanel').addEventListener('click', () => setPanel(true));
 
   // ---- looking around
   const pointers = new Map();
   let pinch = null;
+  // A double-click / double-tap toggles the sky guide. Turning it on opens the card of whatever is
+  // under the finger; the guide's hit list is built while drawing, so if it was off, wait two frames
+  // for it before picking the object.
+  function guideOnAt(x, y) {
+    if (S.guide) { guidePinned = guideAt(x, y); return; }
+    setGuide(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => { guidePinned = guideAt(x, y); }));
+  }
+  // A long press toggles the constellation lines and names.
+  function toggleLines() {
+    el.showLines.checked = !el.showLines.checked;
+    el.showLines.dispatchEvent(new Event('change', { bubbles: true }));
+    skyDirty = true;
+  }
+  let longPress = null, lastTap = null;
+  // Hovering: the card stays up while the pointer crosses the gap to it and while it is over it,
+  // so its links can be clicked.
+  let hoverOff = 0, overCard = false;
+  function leaveHover() {
+    clearTimeout(hoverOff);
+    hoverOff = setTimeout(() => { if (!overCard) { guideHover = null; canvas.style.cursor = ''; } }, 400);
+  }
+  skyCard.addEventListener('pointerenter', () => { overCard = true; clearTimeout(hoverOff); });
+  skyCard.addEventListener('pointerleave', () => { overCard = false; if (guideHover) leaveHover(); });
+  const cancelLongPress = () => { if (longPress) { clearTimeout(longPress.timer); longPress = null; } };
+  canvas.addEventListener('contextmenu', e => e.preventDefault());   // a long press must not open a menu
+
   canvas.addEventListener('pointerdown', e => {
+    stopFlight();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelLongPress();
+    if (!e.shiftKey && !e.altKey) {
+      const x = e.clientX, y = e.clientY;
+      longPress = { x, y, timer: setTimeout(() => { longPress = null; pointers.forEach(p => { p.held = true; }); toggleLines(); }, 550) };
+    }
     if ((e.shiftKey || e.altKey) && S.shower !== 'sporadic') {
       const v = unproject(e.clientX, e.clientY);
       v[2] = Math.max(0, v[2]);
@@ -1745,6 +2003,7 @@
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, fov: cam.fov };
+      cancelLongPress();
     }
   });
   canvas.addEventListener('pointermove', e => {
@@ -1752,10 +2011,12 @@
     if (!prev) {
       if (S.guide && e.pointerType === 'mouse') {
         const o = guideAt(e.clientX, e.clientY);
-        if (o !== guideHover) { guideHover = o; canvas.style.cursor = o ? 'pointer' : ''; }
+        if (o) { clearTimeout(hoverOff); if (o !== guideHover) { guideHover = o; canvas.style.cursor = 'pointer'; } }
+        else if (guideHover) leaveHover();
       }
       return;
     }
+    if (longPress && Math.hypot(e.clientX - longPress.x, e.clientY - longPress.y) > 8) cancelLongPress();
     if (pointers.size === 1) {
       cam.yaw -= (e.clientX - prev.x) / focal;
       cam.pitch += (e.clientY - prev.y) / focal;
@@ -1770,8 +2031,18 @@
   });
   const endPointer = e => {
     const p = pointers.get(e.pointerId);
-    if (S.guide && p && e.type === 'pointerup' && pointers.size === 1 && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 6) {
-      guidePinned = guideAt(e.clientX, e.clientY);
+    cancelLongPress();
+    const tap = p && !p.held && e.type === 'pointerup' && pointers.size === 1 && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 6;
+    if (tap) {
+      const now = performance.now();
+      if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+        lastTap = null;
+        if (S.guide) setGuide(false);   // a double-click toggles the guide
+        else guideOnAt(e.clientX, e.clientY);
+      } else {
+        lastTap = { t: now, x: e.clientX, y: e.clientY };
+        if (S.guide) guidePinned = guideAt(e.clientX, e.clientY);
+      }
     }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
@@ -1781,6 +2052,7 @@
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
+    stopFlight();
     cam.fov *= Math.exp(e.deltaY * 0.0012);
     updateCam(); syncFov();
   }, { passive: false });
@@ -1795,6 +2067,7 @@
     else if (k === 'z') document.body.classList.toggle('zen');
     else if (k === 'c') setComet(!S.comet);
     else if (k === 'i') setGuide(!S.guide);
+    else if (k === 'l') toggleLines();
     else if (k === 'f') $('fullscreen').click();
     else if (k === 'arrowleft') { cam.yaw -= 5 * DEG; updateCam(); }
     else if (k === 'arrowright') { cam.yaw += 5 * DEG; updateCam(); }
@@ -1828,9 +2101,14 @@
    *                      (transform set to CSS pixels), after the sky, Sun and Moon and before the meteors
    *                      and the landscape. dt is simulated seconds since the last frame (meteor clock).
    *   setLocation({ name, lat, lon, tz }), setTime(Date | ms)
+   *   realSky, skyTexture (width of the star map in use), skyFull (the sharpest star map has loaded)
    * A 'meteorsim-ready' event fires on window once this API exists.
    */
   const API = {
+    get realSky() { return skyLive(); },
+    get skyTexture() { return sky ? sky.textureSize : 0; },
+    // true once the star map is the sharpest this device will get (8K, or 4K where 8K can't be used)
+    get skyFull() { return skyLive() && (sky.textureSize >= 8192 || sky.maxTexture < 8192); },
     getObserver() {
       return { name: OBS.name, lat: OBS.lat, lon: OBS.lon, tz: OBS.tz, date: new Date(clockMs), lst: lstNow(),
         sunAlt: sunAltDeg, sunAz: (((azOf(sunVec) / DEG) % 360) + 360) % 360, moonAlt: moonAltDeg,

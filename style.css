@@ -49,7 +49,7 @@ body.real-sky #skygl { opacity: 1; }
 }
 
 /* ---------- HUD ---------- */
-#hud {
+#hud { display: none;
   position: fixed;
   left: 24px;
   top: 20px;
@@ -270,7 +270,8 @@ input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
 }
 
 #openPanel { position: fixed; top: 16px; right: 16px; display: none; }
-body.ui-hidden #openPanel { display: block; }
+body.ui-hidden #openPanel { display: flex; }
+.menu-btn { width: 44px; height: 44px; padding: 0; align-items: center; justify-content: center; }
 
 details { border-top: 1px solid var(--line); padding-top: 12px; }
 summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
@@ -314,7 +315,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible {
   color: var(--text);
   font-size: 12.5px;
   line-height: 1.45;
-  pointer-events: none;
+  pointer-events: auto;   /* hoverable, so its links can be clicked */
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -418,8 +419,14 @@ select.field option, select.field optgroup { background: #0d1220; color: var(--t
 input.tod { margin-top: 10px; }
 .speeds button { flex: 1 0 22%; }
 
+/* Touch screens: no keyboard hint, so the compass sits in the corner. */
+@media (pointer: coarse) {
+  #hint { display: none; }
+  #compass { bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+}
+/* Phones upright: the compass stays at the bottom-left, clear of the menu button on the right. */
 @media (max-width: 700px) {
-  #compass { top: 136px; bottom: auto; left: 16px; width: 200px; }
+  #compass { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); left: 16px; width: 200px; }
 }
 
 .control-group { margin-bottom: 12px; }
@@ -432,3 +439,23 @@ input.tod { margin-top: 10px; }
 }
 .goto-results button:hover, .goto-results button:focus-visible { background: var(--accent-bg); }
 .goto-results small { display: block; color: var(--muted); }
+.res-info { opacity: 0.7; }
+.dso-credit { position: fixed; right: 12px; bottom: 30px; max-width: min(60vw, 640px); font-size: 11px; line-height: 1.35;
+  color: rgba(220, 228, 240, 0.65); text-align: right; pointer-events: none; z-index: 5; }
+.dso-credit[hidden] { display: none; }
+@media (max-width: 700px) {
+  .dso-credit { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; left: 16px; right: 16px; max-width: none; text-align: left; }
+}
+#skyCard .photo-src { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11.5px; }
+#skyCard .photo-src a { color: var(--accent); pointer-events: auto; }
+/* Subsections inside a control group (Simulations → Meteors, Scenarios, Aurora...) */
+.sub-group { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.sub-group > summary { padding: 4px 0 4px 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+.sub-group > section { padding-left: 12px; }
+.search-head { align-items: center; margin-bottom: 4px; }
+.search-head .field { flex: 1; font-size: 14px; padding: 8px 10px; }
+.goto-results[hidden] { display: none; }
+#gotoStatus:empty { display: none; }
+/* long press on the sky opens the sky guide, not the browser's callout or text selection */
+#sky { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+#skyCard .zoom-link { color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer; }

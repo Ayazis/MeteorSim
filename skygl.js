@@ -152,22 +152,58 @@ void main() {
     star *= uExposure;
   }
 
-  // The sky itself
-  float sa = max(sin(alt), 0.0);
-  vec3 sky = mix(uHor, uZen, smoothstep(0.0, 0.55, sa));
-  // Airglow: a faint green band about 10 degrees up, visible only from dark sites.
+  // The sky itself. Brightness grows with the column of air looked through, so blend by
+  // optical path (airmass) rather than by angle: a smooth gradient that brightens fast near the horizon.
+  float altc = max(alt, 0.0);
+  float amv = airmass(altc);
+  float path = clamp((amv - 1.0) / 11.0, 0.0, 1.0);
+  vec3 sky = mix(uZen, uHor, smoothstep(0.0, 1.0, pow(path, 0.7)));
+  // Airglow: a faint green band about 10 degrees up, visible only from dark sites (van Rhijn brightening).
   sky += vec3(0.0005, 0.0014, 0.0007) * exp(-pow((altd - 11.0) / 9.0, 2.0)) * (1.0 - uPollution);
   // A town's light dome in one direction, plus general glow all round.
   float toward = 0.5 + 0.5 * cos(az - uDomeAz);
   sky += uDome * uPollution * exp(-max(altd, 0.0) / 13.0) * (0.3 + 0.7 * toward * toward);
-  // Sunlight scattered in the air: a bright aureole round the Sun, and a glow along the horizon
-  // on its side of the sky that fades up the sky and away from it.
+
+  // Sunlight scattered in the air. Rayleigh (blue, broad, symmetric) plus Mie from aerosols
+  // (white, strongly forward: the aureole). The light reaching each patch of sky has crossed a
+  // column set by the Sun's altitude, so it reddens as the Sun sinks; light from near the
+  // horizon has also crossed a long view path, which bleaches it toward white haze.
+  const vec3 betaR = vec3(0.30, 0.62, 1.30);          // relative Rayleigh optical depth, ~1/lambda^4
   float cs = dot(d, uSunDir);
-  float low = exp(-max(altd, 0.0) / 9.0);
-  sky += uSunCol * (0.9 * exp((cs - 1.0) * 25.0) + 0.35 * pow(max(cs, 0.0), 5.0) + low * (0.25 + 0.75 * pow(0.5 + 0.5 * cs, 3.0)));
-  // Moonlight: a halo round the Moon.
+  float sunAlt = asin(clamp(uSunDir.z, -1.0, 1.0));
+  float amSun = airmass(sunAlt);
+  vec3 sunTrans = exp(-betaR * 0.11 * min(amSun, 40.0));
+  vec3 viewTrans = exp(-betaR * 0.11 * min(amv, 40.0));
+  float phR = 0.75 * (1.0 + cs * cs);
+  float g = 0.76, g2 = g * g;
+  float phM = (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cs, 1.5) * 0.08;
+  // Rayleigh: deep blue overhead, saturating toward the horizon. It is lit from high in the
+  // atmosphere, so it keeps the Sun's own colour; the aureole and horizon glow are reddened.
+  vec3 rayleigh = phR * (1.0 - viewTrans) / (1.0 - exp(-betaR.b * 0.11)) * vec3(0.30, 0.45, 0.80) * 0.12;
+  float aureole = phM * (0.25 + 0.75 * path);
+  float low = exp(-altd / 9.0);
+  vec3 tint = uSunCol * mix(vec3(1.0), sunTrans / max(max(sunTrans.r, sunTrans.g), 1e-3), 0.65);
+  sky += uSunCol * rayleigh * smoothstep(-0.10, 0.0, sunAlt);
+  sky += tint * (0.9 * exp((cs - 1.0) * 25.0) + aureole * 0.45 + 0.3 * pow(max(cs, 0.0), 5.0)
+               + low * (0.2 + 0.8 * pow(0.5 + 0.5 * cs, 3.0)));
+
+  // Twilight on the far side: Earth's shadow rises as a blue-grey band above the antisolar
+  // horizon, topped by the pink Belt of Venus.
+  float tw = smoothstep(-0.12, -0.01, sunAlt) * (1.0 - smoothstep(0.02, 0.10, sunAlt));
+  if (tw > 0.0) {
+    float anti = pow(max(-cs, 0.0), 2.0);
+    float shadowTop = clamp(-sunAlt, 0.0, 0.2) * 57.3 + 1.5;   // degrees
+    float belt = exp(-pow((altd - shadowTop - 3.5) / 3.5, 2.0));
+    float shade = 1.0 - smoothstep(shadowTop - 1.0, shadowTop + 1.0, altd);
+    float lum = max(max(uSunCol.r, uSunCol.g), uSunCol.b);
+    sky += vec3(0.85, 0.42, 0.48) * lum * 0.9 * belt * anti * tw;
+    sky = mix(sky, sky * vec3(0.55, 0.62, 0.82), shade * anti * tw * 0.6);
+  }
+
+  // Moonlight: a halo round the Moon, with the same aerosol aureole.
   float cm = dot(d, uMoonDir);
-  sky += uMoonCol * (2.5 * exp((cm - 1.0) * 60.0) + 0.6 * pow(max(cm, 0.0), 6.0));
+  float phMm = (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cm, 1.5) * 0.02;
+  sky += uMoonCol * (2.5 * exp((cm - 1.0) * 60.0) + 0.6 * pow(max(cm, 0.0), 6.0) + phMm * (0.3 + 0.7 * path));
 
   if (uAuroraVisibility > 0.0 && alt > 0.0) {
     vec3 emission = texture(uAurora, gl_FragCoord.xy / uRes).rgb;
@@ -175,7 +211,10 @@ void main() {
     float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
     sky += mix(vec3(luminance), emission, smoothstep(0.0003, 0.014, luminance));
   }
-  vec3 col = alt < 0.0 ? uGround : sky + star;
+  // Soft horizon: haze thickens into the ground over a fraction of a degree instead of a hard edge.
+  vec3 hazeEdge = mix(uGround, sky, 0.45);
+  float edge = smoothstep(-0.6, 0.35, altd);
+  vec3 col = altd < -0.6 ? uGround : mix(hazeEdge, sky + star, edge);
   col = toSrgb(col);
   col += (hash(gl_FragCoord.xy + fract(uTime * 0.37) * 311.0) - 0.5) / 255.0;   // dither away banding
   outColor = vec4(col, 1.0);
@@ -243,6 +282,23 @@ void main() {
       depthTest: false, depthWrite: false
     });
 
+    // Phones drop the WebGL context when memory runs short (or the tab sits in the background).
+    // Ask for it back, keep the decoded map, and upload it again once the context returns.
+    let lost = false;
+    const listeners = { lost: [], restored: [] };
+    canvas.addEventListener('webglcontextlost', e => {
+      e.preventDefault();   // allows the browser to restore the context
+      lost = true;
+      listeners.lost.forEach(fn => fn());
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      lost = false;
+      const texture = uniforms.uSky.value;
+      if (texture) texture.needsUpdate = true;
+      auroraTarget.dispose();
+      listeners.restored.forEach(fn => fn());
+    });
+
     async function load(url) {
       const img = await decode(url);
       const texture = new THREE.Texture(img);
@@ -269,6 +325,7 @@ void main() {
     }
 
     function render(u) {
+      if (lost) return;
       const size = uniforms.uRes.value;
       if (size.x !== canvas.width || size.y !== canvas.height) {
         size.set(canvas.width, canvas.height);
@@ -291,6 +348,10 @@ void main() {
     return {
       maxTexture: renderer.capabilities.maxTextureSize,
       load, render,
+      // also catch a context that died without an event (seen after app switches on phones)
+      get lost() { return lost || renderer.getContext().isContextLost(); },
+      dispose() { try { renderer.dispose(); } catch (e) { /* context already gone */ } },
+      on(event, fn) { listeners[event]?.push(fn); },
       get textureSize() { return uniforms.uSky.value?.image.width || 0; }
     };
   };
