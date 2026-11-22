@@ -247,7 +247,7 @@
   const TW_HOR = [[0, 0, 0], [16, 22, 42], [52, 54, 82], [150, 104, 92], [214, 142, 96], [222, 182, 150], [178, 200, 224], [172, 204, 236]];
 
   // ------------------------------------------------------------------ state
-  const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: true, guide: false };
+  const S = { rate: 44, shower: 'leonids', lm: 6.5, timeScale: 1, mode: 'sky', showRadiant: false, comet: false, guide: false };
   S.cardinals = true;
   let radRa = 0, radDec = 0; // the radiant, fixed among the stars
   let radVec = [0, 0, 1];
