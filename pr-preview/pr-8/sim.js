@@ -775,44 +775,6 @@
     fillLayer(c, far, rgb(mix(haze, col.ground, 0.6)));
     fillLayer(c, mid, rgb(mix(haze, col.ground, 0.83)));
     fillLayer(c, near, rgb(col.ground));
-    drawTownLights(c, col);
-  }
-
-  // Towns under the light domes: clusters of street lights on the hillsides, partly hidden by the
-  // trees in front. They match the domes drawn in skygl.js (sodium town, LED town, far city).
-  const TOWNS = [
-    { az: DOME_AZ, spread: 12, n: 140, white: 0.15, bright: 1 },
-    { az: DOME_AZ + 1.95, spread: 6, n: 60, white: 0.85, bright: 0.7 },
-    { az: DOME_AZ - 2.45, spread: 3, n: 30, white: 0.3, bright: 0.45 },
-  ];
-  const townLights = (() => {
-    const r = mulberry32(4242), out = [];
-    // The towns lie in the lowland in front of the hills: lights spread just below the horizon,
-    // the nearer ones lower and bigger.
-    for (const t of TOWNS) for (let i = 0; i < t.n; i++) {
-      const az = t.az + gauss(r) * t.spread * 0.5 * DEG;
-      const near = r() * r();
-      out.push({ az, alt: -0.12 - near * 1.3 * t.bright, size: 0.6 + near * 1.4 + r() * 0.3,
-        col: r() < t.white ? [235, 238, 255] : [255, 178, 90], a: t.bright * (0.55 + 0.45 * r()) });
-    }
-    return out;
-  })();
-  function drawTownLights(c, col) {
-    const k = (0.45 + 0.55 * col.t) * (1 - dayF);   // always faintly there; brighter in a polluted sky
-    if (k <= 0.01) return;
-    c.globalCompositeOperation = 'lighter';
-    for (const L of townLights) {
-      const p = project(dir(L.az, L.alt * DEG));
-      if (!p || !onScreen(p, 4)) continue;
-      const a = L.a * k;
-      c.globalAlpha = Math.min(1, a * 0.35);
-      c.drawImage(glow, p[0] - L.size * 3, p[1] - L.size * 3, L.size * 6, L.size * 6);
-      c.globalAlpha = Math.min(1, a);
-      c.fillStyle = rgb(L.col);
-      c.fillRect(p[0] - L.size / 2, p[1] - L.size / 2, L.size, L.size);
-    }
-    c.globalAlpha = 1;
-    c.globalCompositeOperation = 'source-over';
   }
 
   // Faint compass points on the horizon, just above the landscape.
