@@ -1699,6 +1699,7 @@
     b.addEventListener('click', () => {
       if (pr.lm !== undefined) setLm(pr.lm);
       setShower(pr.shower, { date: HIST_DATES[pr.label] }); setRate(pr.rate);
+      setPanel(false);   // starting a scenario hides the panel so the sky is in full view
     });
     el.presets.appendChild(b);
   });
