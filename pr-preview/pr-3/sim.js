@@ -1233,7 +1233,7 @@
       const deep = o.kind === 'deep';
       const hidden = o.m > lmNow;   // too faint to see under this sky
       const active = o === guideHover || o === guidePinned;
-      if (!active && !narrow && !deep && o.m > 1.7) { guideHits.push({ o, x, y }); continue; }
+      if (!active && !narrow && (deep ? o.m > 7 : o.m > 1.7)) { guideHits.push({ o, x, y }); continue; }
       const a = (hidden ? 0.35 : 0.75) * (active ? 1.3 : 1);
       ctx.strokeStyle = deep ? `rgba(255,205,150,${a})` : `rgba(155,215,255,${a})`;
       ctx.lineWidth = 1;
