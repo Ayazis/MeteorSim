@@ -47,8 +47,8 @@
   const DEG = Math.PI / 180;
   // Lets the rest of the page mark objects that have a photo (a catalogue code like 'M31', or a name).
   const norm = t => String(t || '').toLowerCase().replace(/\s+/g, '');
-  const keys = new Set(OBJECTS.flatMap(o => [norm(o.code), norm(o.name)]));
-  window.DeepSkyPhotos = { has: object => !!object && (keys.has(norm(object.s)) || keys.has(norm(object.n))), list: OBJECTS };
+  const find = object => object ? OBJECTS.find(o => norm(o.code) === norm(object.s) || norm(o.name) === norm(object.n)) || null : null;
+  window.DeepSkyPhotos = { has: object => !!find(object), find, list: OBJECTS };
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
   // Small and full-size images, fetched on demand. A full-size photo takes 16 MB once decoded, so only
