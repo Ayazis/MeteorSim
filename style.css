@@ -270,7 +270,8 @@ input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
 }
 
 #openPanel { position: fixed; top: 16px; right: 16px; display: none; }
-body.ui-hidden #openPanel { display: block; }
+body.ui-hidden #openPanel { display: flex; }
+.menu-btn { width: 44px; height: 44px; padding: 0; align-items: center; justify-content: center; }
 
 details { border-top: 1px solid var(--line); padding-top: 12px; }
 summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
@@ -423,9 +424,9 @@ input.tod { margin-top: 10px; }
   #hint { display: none; }
   #compass { bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
 }
-/* Phones upright: the compass goes to the top-left corner (the meteor-rate panel that used to be there is hidden). */
+/* Phones upright: the compass stays at the bottom-left, clear of the menu button on the right. */
 @media (max-width: 700px) {
-  #compass { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; left: 16px; width: 200px; }
+  #compass { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); left: 16px; width: 200px; }
 }
 
 .control-group { margin-bottom: 12px; }
@@ -443,5 +444,5 @@ input.tod { margin-top: 10px; }
   color: rgba(220, 228, 240, 0.65); text-align: right; pointer-events: none; z-index: 5; }
 .dso-credit[hidden] { display: none; }
 @media (max-width: 700px) {
-  .dso-credit { bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); left: 16px; right: 16px; max-width: none; }
+  .dso-credit { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; left: 16px; right: 16px; max-width: none; text-align: left; }
 }
