@@ -90,7 +90,8 @@ uniform vec3 uF, uR, uU;
 uniform float uFocal, uLat, uLst, uTime;
 uniform float uExposure, uThresh, uStarBoost, uPollution, uHasTex, uDomeAz;
 uniform vec3 uZen, uHor, uDome, uGround;
-uniform vec3 uSunDir, uSunCol, uMoonDir, uMoonCol;   // glow around the Sun (twilight, day) and the Moon
+uniform vec3 uSunDir, uSunCol, uMoonDir, uMoonCol, uEclPole;
+uniform float uNatural;   // glow around the Sun (twilight, day) and the Moon
 out vec4 outColor;
 
 const float PI = 3.14159265359;
@@ -165,9 +166,13 @@ void main() {
     // Scintillation: every star flickers on its own, more so low in the sky.
     float am = airmass(alt);
     vec2 cell = floor(uv * vec2(2048.0, 1024.0));
-    float amp = 0.1 + 0.35 * clamp((am - 1.0) / 5.0, 0.0, 1.0);
-    float tw = 1.0 + amp * sin(uTime * (6.0 + 9.0 * hash(cell + 7.3)) + 6.2831 * hash(cell));
-    star = base + pts * uStarBoost * tw;
+    float low = clamp((am - 1.0) / 5.0, 0.0, 1.0);
+    float amp = 0.1 + 0.45 * low;
+    float fq = 6.0 + 9.0 * hash(cell + 7.3), ph = 6.2831 * hash(cell);
+    float tw = 1.0 + amp * 0.6 * (sin(uTime * fq + ph) + 0.6 * sin(uTime * fq * 1.73 + ph * 2.0));
+    // Low down, each colour scintillates on its own, so bright stars flash red, green and blue.
+    vec3 chroma = 1.0 + low * 0.5 * vec3(sin(uTime * fq * 2.1 + ph * 3.0), sin(uTime * fq * 2.6 + ph * 5.0), sin(uTime * fq * 3.1 + ph * 7.0));
+    star = base + pts * uStarBoost * tw * chroma;
 
     // Light pollution: the faint end sinks into the bright sky.
     star = max(star - uThresh, 0.0);
@@ -188,11 +193,46 @@ void main() {
   float amv = airmass(altc);
   float path = clamp((amv - 1.0) / 11.0, 0.0, 1.0);
   vec3 sky = mix(uZen, uHor, smoothstep(0.0, 1.0, pow(path, 0.7)));
-  // Airglow: a faint green band about 10 degrees up, visible only from dark sites (van Rhijn brightening).
-  sky += vec3(0.0005, 0.0014, 0.0007) * exp(-pow((altd - 11.0) / 9.0, 2.0)) * (1.0 - uPollution);
-  // A town's light dome in one direction, plus general glow all round.
-  float toward = 0.5 + 0.5 * cos(az - uDomeAz);
-  sky += uDome * uPollution * exp(-max(altd, 0.0) / 13.0) * (0.3 + 0.7 * toward * toward);
+  float dark = (1.0 - uPollution) * uNatural;
+  float ext = exp(-0.25 * (amv - 1.0) * 0.92);   // extinction of the high glows on their way down
+  // Airglow: oxygen at ~95 km glows green, at ~250 km red. Seen edge-on the layers brighten toward the
+  // horizon (van Rhijn) into a band ~10 degrees up, crossed by slow gravity-wave ripples.
+  {
+    float rip = 0.7 + 0.3 * sin(az * 9.0 + altd * 0.35 + uTime * 0.02) * sin(az * 4.0 - altd * 0.2 - uTime * 0.013);
+    float band = exp(-pow((altd - 10.0) / 8.0, 2.0)) * rip + 0.25 * exp(-altd / 30.0);
+    float redBand = exp(-pow((altd - 6.0) / 7.0, 2.0)) * (0.8 + 0.2 * sin(az * 3.0 + 1.7));
+    sky += (vec3(0.0016, 0.0065, 0.0026) * band + vec3(0.0040, 0.0008, 0.0005) * redBand) * dark * ext;
+  }
+  // Zodiacal light: sunlight scattered by interplanetary dust in the plane of the planets. A tilted
+  // cone along the ecliptic rising from where the Sun has set, fading with distance from the Sun,
+  // with the faint gegenschein opposite it.
+  if (dark > 0.001) {
+    float beta = asin(clamp(dot(d, uEclPole), -1.0, 1.0));
+    vec3 dp = normalize(d - uEclPole * dot(d, uEclPole) + 1e-6);
+    vec3 sp = normalize(uSunDir - uEclPole * dot(uSunDir, uEclPole) + 1e-6);
+    float el = acos(clamp(dot(dp, sp), -1.0, 1.0));          // ecliptic longitude from the Sun
+    float w = 0.10 + 0.22 * el / PI;                          // the cone widens away from the Sun
+    float cone = exp(-abs(beta) / w) * pow(0.35 / (el + 0.12), 1.6);
+    float gegen = exp(-pow((PI - el) / 0.16, 2.0) - pow(beta / 0.12, 2.0)) * 0.09;
+    float band = exp(-abs(beta) / 0.2) * 0.05;               // the faint zodiacal band joining them
+    sky += vec3(0.030, 0.027, 0.021) * (cone + gegen + band) * dark * ext * step(0.0, alt);
+  }
+  // Light domes: the nearest town (sodium orange), a white LED-lit town and a far city glowing on the
+  // horizon. The far one shows even from a dark site.
+  {
+    float pol = uPollution;
+    vec3 sodium = vec3(1.0, 0.62, 0.30), led = vec3(0.85, 0.85, 0.80);
+    float t1 = 0.5 + 0.5 * cos(az - uDomeAz);
+    float t2 = 0.5 + 0.5 * cos(az - uDomeAz - 1.95);
+    float t3 = 0.5 + 0.5 * cos(az - uDomeAz + 2.45);
+    float ah = max(altd, 0.0);
+    float dl = length(uDome) + 1e-5;
+    vec3 domeCol = uDome / dl;                                // colour, without the town's strength
+    sky += uDome * pol * exp(-ah / 13.0) * (0.25 + 0.75 * pow(t1, 3.0));
+    sky += dl * pol * led * 0.55 * exp(-ah / 8.0) * pow(t2, 14.0);
+    float farGlow = 0.0011 * (0.3 + 0.7 * (1.0 - smoothstep(-0.25, -0.05, uSunDir.z)));
+    sky += (sodium * 0.7 + domeCol * 0.3) * (farGlow + dl * pol * 0.4) * exp(-ah / 4.5) * pow(t3, 22.0);
+  }
 
   // Sunlight scattered in the air. Rayleigh (blue, broad, symmetric) plus Mie from aerosols
   // (white, strongly forward: the aureole). The light reaching each patch of sky has crossed a
@@ -241,6 +281,8 @@ void main() {
     float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
     sky += mix(vec3(luminance), emission, smoothstep(0.0003, 0.014, luminance));
   }
+  // Extinction of whatever lies behind the haze near the horizon: a little dimmer and warmer.
+  sky *= mix(vec3(1.0), vec3(1.0, 0.93, 0.82), (1.0 - smoothstep(0.0, 6.0, altd)) * 0.5);
   // Soft horizon: haze thickens into the ground over a fraction of a degree instead of a hard edge.
   vec3 hazeEdge = mix(uGround, sky, 0.45);
   float edge = smoothstep(-0.6, 0.35, altd);
@@ -286,7 +328,7 @@ void main() {
 
     const uniforms = { uSky: { value: null }, uRes: { value: new THREE.Vector2() }, uHasTex: { value: 0 } };
     const inputs = ['F', 'R', 'U', 'focal', 'lat', 'lst', 'time', 'exposure', 'thresh', 'starBoost',
-      'pollution', 'domeAz', 'zen', 'hor', 'dome', 'ground', 'sunDir', 'sunCol', 'moonDir', 'moonCol',
+      'pollution', 'domeAz', 'zen', 'hor', 'dome', 'ground', 'sunDir', 'sunCol', 'moonDir', 'moonCol', 'eclPole', 'natural',
       'activity', 'auroraTime', 'auroraVisibility', 'foldDepth', 'rayContrast', 'curtainHeight', 'upperRed', 'pinkFringe', 'pinkGlow', 'purpleGlow', 'tealTint', 'greenHeight', 'redHeight', 'pinkHeight', 'purpleHeight', 'fringeHeight'];
     const bindings = inputs.map(key => {
       const uniform = { value: null };

@@ -166,6 +166,14 @@
     const dec = Math.asin(clamp(sl * v[2] + cl * v[1], -1, 1));
     return [lst - Math.atan2(-v[0], cl * v[2] - sl * v[1]), dec];
   }
+  // Atmospheric extinction per colour channel (relative to the zenith), normalised so the
+  // brightest channel stays at 1: things low in the sky turn yellow, then orange-red.
+  const EXT_RGB = [0.13, 0.2, 0.34];
+  function reddening(am) {
+    const f = EXT_RGB.map(k => Math.pow(10, -0.4 * k * (am - 1)));
+    const m = Math.max(...f);
+    return f.map(x => x / m);
+  }
   // ---- time, the Sun and the Moon
   const jdOf = ms => ms / 86400000 + 2440587.5;
   // Greenwich mean sidereal time (IAU 1982, as in Meeus ch. 12), radians.
@@ -251,7 +259,7 @@
   let clockMs = Date.now();
   const lstNow = () => gmst(clockMs) + OBS.lon * DEG;
   // Sun, Moon and the light they add, refreshed every frame by updateLight().
-  let sunVec = [0, 0, -1], moonVec = [0, 0, -1], moon = { illum: 0, waxing: true };
+  let sunVec = [0, 0, -1], moonVec = [0, 0, -1], eclPole = [0, 0, 1], moon = { illum: 0, waxing: true };
   let sunAltDeg = -90, moonAltDeg = -90;
   let lmNow = S.lm;          // limiting magnitude now: light pollution plus twilight and moonlight
   let sqmNow = 21.7, dayF = 0, lightKey = '';
@@ -260,6 +268,7 @@
     const lst = lstNow();
     const sp = sunPos(clockMs);
     sunVec = eqToHor(sp.ra, sp.dec, lst);
+    eclPole = eqToHor(270 * DEG, 66.56 * DEG, lst);   // north ecliptic pole
     const mp = moonPos(clockMs, sp.lam);
     let mv = eqToHor(mp.ra, mp.dec, lst);
     const malt = Math.asin(clamp(mv[2], -1, 1)) - mp.par * Math.sqrt(Math.max(0, 1 - mv[2] * mv[2])); // topocentric
@@ -516,7 +525,8 @@
     if (m < -1.4) m = -1.4 + srand() * 0.6;
     const col = STAR_COLORS[cr < 0.12 ? 0 : cr < 0.35 ? 1 : cr < 0.7 ? 2 : cr < 0.9 ? 3 : 4];
     const alt = Math.asin(z), am = airmass(alt);
-    const s = { v: [rxy * Math.cos(ph), rxy * Math.sin(ph), z], m, alt, am, css: rgb(col),
+    const rc = reddening(am).map((x, i) => Math.round(col[i] * x));
+    const s = { v: [rxy * Math.cos(ph), rxy * Math.sin(ph), z], m, alt, am, css: rgb(rc), rgb: rc,
       mEff: m + EXT_K * (am - 1), ph: srand() * TAU, f: 5 + srand() * 9, f2: 3 + srand() * 5 };
     (m < 2.4 ? brightStars : faintStars).push(s);
   }
@@ -986,10 +996,17 @@
       const L = omega * dur;
 
       const tv = clamp((v - 25) / 45, 0, 1);
+      // Colour comes from what glows. Fast meteors excite magnesium and iron (blue-green head) and
+      // leave the green oxygen line in their wake; slow ones are dominated by sodium (yellow-orange).
+      // Each meteoroid's make-up varies a little, and low meteors are reddened by the air.
+      const mg = clamp(tv + (Math.random() - 0.5) * 0.35, 0, 1), na = clamp(1 - tv + (Math.random() - 0.5) * 0.35, 0, 1);
+      const head0 = mix(mix([255, 226, 170], [215, 238, 255], mg), [255, 214, 150], na * 0.35);
+      const trail0 = mix(mix([255, 150, 70], [110, 255, 170], mg), [255, 176, 90], na * 0.4);
+      const red = reddening(airmass(alt));
+      const head = head0.map((x, i) => x * red[i]), trail = trail0.map((x, i) => x * red[i]);
       meteors.push({
-        P, t, sA: -L / 2, L, dur, age: 0, m: mEff,
-        head: mix([255, 232, 190], [222, 240, 255], tv).map(Math.round),
-        trail: mix([255, 160, 80], [120, 255, 175], tv).map(Math.round),
+        P, t, sA: -L / 2, L, dur, age: 0, m: mEff, tv,
+        head0: head, trail0: trail, head: head.slice(), trail: trail.slice(),
         flareAt: 0.5 + Math.random() * 0.45,
         flareAmp: mEff < 1.5 && Math.random() < 0.35 ? 0.6 + Math.random() * 1.8 : 0,
         train: mEff < 2 && Math.random() < sh.trainProb,
@@ -1051,6 +1068,17 @@
       if (M.m > lmNow + 0.3) continue;
       const I = lightCurve(p, M);
       if (I < 0.005) continue;
+      // The colour shifts along the flight: the head turns yellow-orange as the meteoroid slows and
+      // sodium takes over, and goes white-hot in a flare.
+      {
+        const late = smooth(0.55, 1, p) * (0.4 + 0.6 * (1 - M.tv));
+        const hot = M.flareAmp ? Math.exp(-(((p - M.flareAt) / 0.06) ** 2)) : 0;
+        for (let k = 0; k < 3; k++) {
+          const h = M.head0[k] * lerp(1, [1, 0.84, 0.62][k], late);
+          M.head[k] = Math.round(lerp(h, 255, hot * 0.7));
+          M.trail[k] = Math.round(M.trail0[k] * lerp(1, [1, 0.75, 0.6][k], late * 0.5));
+        }
+      }
       const mNow = M.m - 2.5 * Math.log10(I);
       const vis = lmNow - mNow;
       if (vis < -0.3) continue;
@@ -1149,13 +1177,22 @@
       if (s.mEff > lmNow) continue;
       const p = project(s.v);
       if (!p || !onScreen(p, 10)) continue;
-      const amp = 0.06 + 0.16 * Math.min(1, (s.am - 1) / 3);   // twinkles more low down
+      const low = Math.min(1, (s.am - 1) / 4);
+      const amp = 0.08 + 0.3 * low;   // twinkles more low down
       const tw = 1 + amp * 0.5 * (Math.sin(t * s.f + s.ph) + Math.sin(t * s.f2 + s.ph * 2));
+      // Bright stars low down flash colours too: the air splits their light like a weak prism and
+      // each colour scintillates on its own.
+      let css = s.css;
+      if (s.m < 1.6 && low > 0.05) {
+        const cf = low * smooth(1.6, -0.5, s.m) * 0.55;
+        const c = s.rgb.map((x, k) => clamp(x * (1 + cf * Math.sin(t * (s.f * 1.7 + k * 2.3) + s.ph * (k + 1) * 3.1)), 0, 255) | 0);
+        css = `rgb(${c[0]},${c[1]},${c[2]})`;
+      }
       const vis = lmNow - s.mEff;
       const a = clamp(0.3 + vis * 0.2, 0, 1) * tw;
       const r = 0.6 + Math.max(0, 4 - s.mEff) * 0.3;
       ctx.globalAlpha = Math.min(1, a);
-      ctx.fillStyle = s.css;
+      ctx.fillStyle = css;
       ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, TAU); ctx.fill();
       ctx.globalAlpha = Math.min(1, a) * 0.3;
       const g = r * 5;
@@ -1414,7 +1451,10 @@
       pollution: col.t,
       domeAz: DOME_AZ,
       zen: toLinear(col.zen), hor: toLinear(col.hor), dome: toLinear(col.dome), ground: toLinear(col.ground),
-      sunDir: sunVec, sunCol: sunGlowColor(), moonDir: moonVec,
+      sunDir: sunVec, sunCol: sunGlowColor(), moonDir: moonVec, eclPole,
+      // How dark the sky is for the faintest natural glows (zodiacal light, airglow): no twilight,
+      // little moonlight, far from town lights.
+      natural: smooth(-12, -18, sunAltDeg) * (1 - 0.85 * moon.illum * smooth(-2, 10, moonAltDeg)),
       moonCol: [0.016, 0.019, 0.026].map(x => x * moon.illum ** 3 * smooth(-1, 6, moonAltDeg)),
     });
   }
