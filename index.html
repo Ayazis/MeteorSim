@@ -61,8 +61,11 @@
   </section>
   </details>
 
-  <details class="control-group" open>
-    <summary>Meteor showers</summary>
+
+  <details class="control-group" id="simMenu" open>
+    <summary>Simulations</summary>
+    <details class="sub-group" open>
+      <summary>Meteors</summary>
   <section>
     <div class="label"><span>Meteor rate</span><output id="rateOut"></output></div>
     <input type="range" id="rate" min="0" max="1000" step="1" aria-label="Meteor rate (logarithmic)">
@@ -72,11 +75,6 @@
       <span>meteors per second</span>
     </div>
     <p class="note" id="compare"></p>
-  </section>
-  <section>
-    <div class="label"><span>Scenarios</span></div>
-    <div class="presets" id="presets"></div>
-    <p class="note" id="presetNote" hidden></p>
   </section>
   <section>
     <div class="label"><span>Shower</span></div>
@@ -91,36 +89,26 @@
     </div>
     <label class="check"><input type="checkbox" id="showRadiant"> Show the radiant</label>
   </section>
-  </details>
-
-  <details class="control-group">
-    <summary>Observing conditions</summary>
   <section>
-    <div class="label"><span>Location</span><output id="locOut"></output></div>
-    <select id="site" class="field wide" aria-label="Observing site"></select>
-    <div class="rate-row coords">
-      <label>Lat <input type="number" id="lat" min="-90" max="90" step="0.01" aria-label="Latitude, degrees north"></label>
-      <label>Lon <input type="number" id="lon" min="-180" max="180" step="0.01" aria-label="Longitude, degrees east"></label>
-      <button id="geo" class="link-btn" type="button">Use my location</button>
-    </div>
-    <p class="note" id="siteNote"></p>
+    <div class="label"><span>Tally</span><button id="resetTally" class="link-btn" type="button">Reset</button></div>
+    <dl class="stats">
+      <dt>Seen in this view</dt><dd id="stSeen">0</dd>
+      <dt>Fireballs (brighter than Venus)</dt><dd id="stFire">0</dd>
+      <dt>Visible right now</dt><dd id="stNow">0</dd>
+      <dt>Elapsed</dt><dd id="stTime">0:00</dd>
+    </dl>
   </section>
+    </details>
+    <details class="sub-group">
+      <summary>Scenarios</summary>
   <section>
-    <div class="label"><span>Date and time</span><output id="todOut"></output></div>
-    <div class="rate-row">
-      <input type="date" id="date" class="field" aria-label="Date">
-      <button id="nowBtn" class="chip" type="button">Now</button>
-    </div>
-    <input type="range" id="tod" min="0" max="1439" step="1" aria-label="Time of day" class="tod">
-    <div class="scale"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-    <p class="note" id="sunNote"></p>
+    <div class="label"><span>Scenarios</span></div>
+    <div class="presets" id="presets"></div>
+    <p class="note" id="presetNote" hidden></p>
   </section>
-  <section>
-    <div class="label"><span>Light pollution</span><output id="lmOut"></output></div>
-    <input type="range" id="lm" min="1" max="9" step="0.1" aria-label="Light pollution, Bortle class 1 to 9">
-    <div class="scale"><span>1 Pristine</span><span>3 Rural</span><span>5 Suburb</span><span>7 Urban</span><span>9 City</span></div>
-    <p class="note" id="lmNote"></p>
-  </section>
+    </details>
+    <details class="sub-group">
+      <summary>Aurora</summary>
   <section>
     <div class="label"><label for="aurora">Aurora activity</label><output id="auroraOut" for="aurora">Off</output></div>
     <input type="range" id="aurora" min="0" max="100" value="0">
@@ -165,6 +153,54 @@
     <button type='button' id='exportAurora'>Export aurora settings</button>
     <p class="note">Look north after dark, or south in the southern hemisphere.</p>
   </section>
+    </details>
+    <details class="sub-group">
+      <summary>Comet</summary>
+  <section>
+    <div class="label"><span>Comet</span><button id="findComet" class="link-btn" type="button">Look at it</button></div>
+    <label class="check"><input type="checkbox" id="showComet" checked> Show a bright comet (C)</label>
+    <p class="note">Low in the east before dawn, like Hale–Bopp in 1997. The blue gas tail points straight away from the Sun, below the horizon. The yellowish dust tail curves away from it. Light pollution shortens both.</p>
+  </section>
+    </details>
+    <details class="sub-group">
+      <summary>Famous impacts</summary>
+  <section>
+    <div class="label"><span>Famous impacts</span></div>
+    <div class="impact-list" id="impactList"></div>
+    <p class="note">Replays a real superbolide or impact over your view, with its measured or estimated size, speed, angle and energy.</p>
+  </section>
+    </details>
+  </details>
+
+  <details class="control-group">
+    <summary>Observing conditions</summary>
+  <section>
+    <div class="label"><span>Location</span><output id="locOut"></output></div>
+    <select id="site" class="field wide" aria-label="Observing site"></select>
+    <div class="rate-row coords">
+      <label>Lat <input type="number" id="lat" min="-90" max="90" step="0.01" aria-label="Latitude, degrees north"></label>
+      <label>Lon <input type="number" id="lon" min="-180" max="180" step="0.01" aria-label="Longitude, degrees east"></label>
+      <button id="geo" class="link-btn" type="button">Use my location</button>
+    </div>
+    <p class="note" id="siteNote"></p>
+  </section>
+  <section>
+    <div class="label"><span>Date and time</span><output id="todOut"></output></div>
+    <div class="rate-row">
+      <input type="date" id="date" class="field" aria-label="Date">
+      <button id="nowBtn" class="chip" type="button">Now</button>
+    </div>
+    <input type="range" id="tod" min="0" max="1439" step="1" aria-label="Time of day" class="tod">
+    <div class="scale"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    <p class="note" id="sunNote"></p>
+  </section>
+  <section>
+    <div class="label"><span>Light pollution</span><output id="lmOut"></output></div>
+    <input type="range" id="lm" min="1" max="9" step="0.1" aria-label="Light pollution, Bortle class 1 to 9">
+    <div class="scale"><span>1 Pristine</span><span>3 Rural</span><span>5 Suburb</span><span>7 Urban</span><span>9 City</span></div>
+    <p class="note" id="lmNote"></p>
+  </section>
+
   </details>
 
   <details class="control-group">
@@ -187,31 +223,12 @@
     </div>
     <p class="note">Faster than real time, the clock and the turning sky speed up but meteors keep their real pace.</p>
   </section>
-  <section>
-    <div class="label"><span>Comet</span><button id="findComet" class="link-btn" type="button">Look at it</button></div>
-    <label class="check"><input type="checkbox" id="showComet" checked> Show a bright comet (C)</label>
-    <p class="note">Low in the east before dawn, like Hale–Bopp in 1997. The blue gas tail points straight away from the Sun, below the horizon. The yellowish dust tail curves away from it. Light pollution shortens both.</p>
-  </section>
-  </details>
 
-  <details class="control-group">
-    <summary>Impact replays and tally</summary>
   <section>
-    <div class="label"><span>Famous impacts</span></div>
-    <div class="impact-list" id="impactList"></div>
-    <p class="note">Replays a real superbolide or impact over your view, with its measured or estimated size, speed, angle and energy.</p>
-  </section>
-  <section>
-    <div class="label"><span>Tally</span><button id="resetTally" class="link-btn" type="button">Reset</button></div>
-    <dl class="stats">
-      <dt>Seen in this view</dt><dd id="stSeen">0</dd>
-      <dt>Fireballs (brighter than Venus)</dt><dd id="stFire">0</dd>
-      <dt>Visible right now</dt><dd id="stNow">0</dd>
-      <dt>Elapsed</dt><dd id="stTime">0:00</dd>
-    </dl>
     <button id="fullscreen" class="chip wide" type="button">Fullscreen</button>
   </section>
   </details>
+
 
   <details>
     <summary>How this is modelled</summary>
