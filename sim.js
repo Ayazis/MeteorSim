@@ -313,30 +313,13 @@
       .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
   }
   // Supermax: the 32K and 64K maps in tiles, fetched only for what is in view once the coarser map runs out of detail.
-  // On by default on large desktop screens; the choice is remembered.
   const SUPERMAX_TILES = ['assets/sky32k', 'assets/sky64k'];
-  function supermaxWanted() {
-    try { const v = localStorage.getItem('meteorsim.supermax'); if (v !== null) return v === '1'; } catch (e) { /* storage off */ }
-    return !matchMedia('(pointer: coarse)').matches;
-  }
   function applySupermax() {
-    const box = document.getElementById('supermax');
     if (!sky) return;
-    const on = box ? box.checked : supermaxWanted();
     const gen = skyGen;
-    sky.setTiles(on ? SUPERMAX_TILES : [])
-      .then(ok => { if (gen === skyGen) { skyDirty = true; updateResInfo(); if (on && !ok) console.warn('Supermax tiles need a larger GPU texture size; keeping the 8K map.'); } })
+    sky.setTiles(SUPERMAX_TILES)
+      .then(ok => { if (gen === skyGen) { skyDirty = true; updateResInfo(); if (!ok) console.warn('Supermax tiles need a larger GPU texture size; keeping the 8K map.'); } })
       .catch(err => console.warn('Supermax star map tiles unavailable.', err));
-  }
-  {
-    const box = document.getElementById('supermax');
-    if (box) {
-      box.checked = supermaxWanted();
-      box.addEventListener('change', () => {
-        try { localStorage.setItem('meteorsim.supermax', box.checked ? '1' : '0'); } catch (e) { /* storage off */ }
-        applySupermax();
-      });
-    }
   }
   function skyLost() {
     document.body.classList.remove('real-sky');
