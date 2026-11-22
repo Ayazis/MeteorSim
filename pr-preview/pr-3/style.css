@@ -456,3 +456,5 @@ input.tod { margin-top: 10px; }
 .search-head .field { flex: 1; font-size: 14px; padding: 8px 10px; }
 .goto-results[hidden] { display: none; }
 #gotoStatus:empty { display: none; }
+/* long press on the sky opens the sky guide, not the browser's callout or text selection */
+#sky { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }

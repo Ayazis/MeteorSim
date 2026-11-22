@@ -1920,8 +1920,25 @@
   // ---- looking around
   const pointers = new Map();
   let pinch = null;
+  // Double-click / double-tap or a long press on the sky turns the sky guide on and opens the card
+  // of whatever is under the finger. The guide's hit list is built while drawing, so if it was off,
+  // wait two frames for it before picking the object.
+  function guideOnAt(x, y) {
+    if (S.guide) { guidePinned = guideAt(x, y); return; }
+    setGuide(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => { guidePinned = guideAt(x, y); }));
+  }
+  let longPress = null, lastTap = null;
+  const cancelLongPress = () => { if (longPress) { clearTimeout(longPress.timer); longPress = null; } };
+  canvas.addEventListener('contextmenu', e => e.preventDefault());   // a long press must not open a menu
+
   canvas.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelLongPress();
+    if (!e.shiftKey && !e.altKey) {
+      const x = e.clientX, y = e.clientY;
+      longPress = { x, y, timer: setTimeout(() => { longPress = null; pointers.forEach(p => { p.held = true; }); guideOnAt(x, y); }, 550) };
+    }
     if ((e.shiftKey || e.altKey) && S.shower !== 'sporadic') {
       const v = unproject(e.clientX, e.clientY);
       v[2] = Math.max(0, v[2]);
@@ -1936,6 +1953,7 @@
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, fov: cam.fov };
+      cancelLongPress();
     }
   });
   canvas.addEventListener('pointermove', e => {
@@ -1947,6 +1965,7 @@
       }
       return;
     }
+    if (longPress && Math.hypot(e.clientX - longPress.x, e.clientY - longPress.y) > 8) cancelLongPress();
     if (pointers.size === 1) {
       cam.yaw -= (e.clientX - prev.x) / focal;
       cam.pitch += (e.clientY - prev.y) / focal;
@@ -1961,8 +1980,17 @@
   });
   const endPointer = e => {
     const p = pointers.get(e.pointerId);
-    if (S.guide && p && e.type === 'pointerup' && pointers.size === 1 && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 6) {
-      guidePinned = guideAt(e.clientX, e.clientY);
+    cancelLongPress();
+    const tap = p && !p.held && e.type === 'pointerup' && pointers.size === 1 && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 6;
+    if (tap) {
+      const now = performance.now();
+      if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+        lastTap = null;
+        guideOnAt(e.clientX, e.clientY);
+      } else {
+        lastTap = { t: now, x: e.clientX, y: e.clientY };
+        if (S.guide) guidePinned = guideAt(e.clientX, e.clientY);
+      }
     }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
