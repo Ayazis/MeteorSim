@@ -287,7 +287,6 @@
 
   const canvas = document.getElementById('sky');
   const ctx = canvas.getContext('2d');
-  const glCanvas = document.getElementById('skygl');
   const bg = document.createElement('canvas'); const bgx = bg.getContext('2d'); // generated sky (fallback) and comet
   const fg = document.createElement('canvas'); const fgx = fg.getContext('2d'); // landscape
   const ml = document.createElement('canvas'); const mx = ml.getContext('2d');  // meteors and trains
@@ -297,8 +296,8 @@
 
   // The real sky, if WebGL2 is available and the star map loads (it can't from file://).
   // The 4K map comes first so the sky appears quickly; big screens then swap in the 8K map.
-  const sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
-  let skyReady = false, sky8k = null;
+  let glCanvas = document.getElementById('skygl');
+  let sky = null, skyReady = false, sky8k = null, skyGen = 0;
   // The WebGL sky is usable: loaded, and its context not lost. Otherwise the 2D canvas draws a generated sky.
   const skyLive = () => !!(sky && skyReady && !sky.lost);
   // The 8K map is fetched once the view needs it: on a big screen, or when zoomed in.
@@ -308,24 +307,36 @@
     const pxPerDeg = longSide / (cam.fov / DEG);        // screen pixels per degree of sky
     const big = longSide >= 1600 && !matchMedia('(pointer: coarse)').matches;
     if (!big && pxPerDeg < 4096 / 360 * 1.5) return;   // the 4K map still holds up
+    const gen = skyGen;
     sky8k = sky.load('assets/starmap_8k.jpg')
-      .then(() => { skyDirty = true; updateResInfo(); })
+      .then(() => { if (gen === skyGen) { skyDirty = true; updateResInfo(); } })
       .catch(err => console.warn('8K star map unavailable, keeping the 4K map.', err));
   }
-  if (sky) {
+  function skyLost() {
+    document.body.classList.remove('real-sky');
+    skyDirty = true;
+    updateResInfo();
+  }
+  // Start (or restart) the WebGL sky on the current canvas and load the star map into it.
+  function startSky() {
+    const gen = ++skyGen;
+    skyReady = false; sky8k = null;
+    sky = window.SkyGL ? window.SkyGL(glCanvas) : null;
+    if (!sky) return;
     sky.on('lost', () => {
+      if (gen !== skyGen) return;
       console.warn('WebGL context lost: drawing the generated sky until it comes back.');
-      document.body.classList.remove('real-sky');
-      skyDirty = true;
-      updateResInfo();
+      skyLost();
     });
     sky.on('restored', () => {
+      if (gen !== skyGen) return;
       if (skyReady) document.body.classList.add('real-sky');
       skyDirty = true;
       updateResInfo();
     });
     sky.load('assets/starmap_4k.jpg')
       .then(() => {
+        if (gen !== skyGen) return;
         skyReady = true; skyDirty = true;
         document.body.classList.add('real-sky');
         wantSky8k();
@@ -333,6 +344,30 @@
       })
       .catch(err => console.warn('Star map unavailable, using the generated sky.', err));
   }
+  // Switching apps on a phone can kill the context for good (iOS rarely gives it back).
+  // When the page is shown again, or on a slow heartbeat, a context that stays dead for a
+  // moment is replaced: a fresh canvas, a fresh renderer, and the star map loaded again
+  // (from the browser cache, so it is quick).
+  let deadSince = 0;
+  function checkSky() {
+    if (!sky || document.hidden) { deadSince = 0; return; }
+    if (!sky.lost) { deadSince = 0; return; }
+    const now = performance.now();
+    if (!deadSince) { deadSince = now; return; }
+    if (now - deadSince < 1200) return;
+    deadSince = 0;
+    console.warn('WebGL context did not come back: rebuilding the sky.');
+    sky.dispose();
+    const fresh = glCanvas.cloneNode(false);
+    fresh.width = glCanvas.width; fresh.height = glCanvas.height;
+    glCanvas.replaceWith(fresh);
+    glCanvas = fresh;
+    skyLost();
+    startSky();
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkSky(); setTimeout(checkSky, 1300); } });
+  setInterval(checkSky, 1000);
+  startSky();
 
   // What is on screen: field of view and which map sizes are in use (or still loading).
   const hudRes = document.getElementById('hudRes');
