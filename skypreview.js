@@ -28,13 +28,13 @@
     Mintaka: ['O', 'g', ['B', 'B']], Saiph: ['B', 's', []], Alioth: ['A', 'd', []], Dubhe: ['K', 'g', ['F']],
     Merak: ['A', 'd', []], 'Mizar & Alcor': ['A', 'd', ['A', 'A']], Alkaid: ['B', 'd', []], Polaris: ['F', 's', ['F', 'F']],
     Mirfak: ['F', 's', []], Algol: ['B', 'd', ['K', 'A']], Alpheratz: ['B', 'd', ['A']], Hamal: ['K2', 'g', []],
-    Schedar: ['K', 'g', []], Kochab: ['K5', 'g', []], Eltanin: ['K5', 'g', []], Rasalhague: ['A', 'g', ['K']],
+    Schedar: ['K', 'g', []], Kochab: ['K2', 'g', []], Eltanin: ['K2', 'g', []], Rasalhague: ['A', 'g', ['K']],
     Denebola: ['A', 'd', []], Algieba: ['K', 'g', ['G']], Markab: ['B', 'g', []], Albireo: ['K2', 'g', ['B']],
     Nunki: ['B', 'd', []], Shaula: ['B', 'd', ['B', 'B']],
   };
   const SIZE = { d: 14, g: 22, b: 27, s: 33 };
   const TINT = { O: [160, 185, 255], B: [175, 200, 255], A: [230, 238, 255], F: [255, 250, 230], G: [255, 236, 180],
-    K: [255, 205, 130], K2: [255, 185, 110], K5: [255, 150, 85], M: [255, 120, 75], wd: [235, 240, 255] };
+    K: [255, 205, 130], K2: [255, 185, 110], K5: [255, 105, 65], M: [235, 70, 50], wd: [235, 240, 255] };
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
   // Small seeded random, so each object's preview is stable.
