@@ -467,3 +467,27 @@ input.tod { margin-top: 10px; }
 /* long press on the sky opens the sky guide, not the browser's callout or text selection */
 #sky { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
 #skyCard .zoom-link { color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer; }
+
+#skyCard .track-btn { pointer-events: auto; cursor: pointer; display: block; width: 100%; margin-top: 10px; padding: 8px 12px; font-size: 13px; text-align: center; }
+#trackBar { position: fixed; z-index: 6; left: 50%; bottom: 52px; transform: translateX(-50%); width: min(520px, calc(100vw - 32px));
+  padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 13px; }
+#trackBar[hidden] { display: none; }
+#trackBar .track-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 2px 8px 4px; }
+#trackBar button { font: inherit; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+#trackBar .track-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#trackBar .track-actions { display: flex; gap: 6px; flex: none; }
+#trackBar .track-info.on { border-color: var(--accent); color: var(--accent); }
+#trackBar .track-close { padding: 6px 10px; }
+#trackBar .track-speed { display: flex; align-items: center; gap: 10px; }
+#trackBar .track-play { flex: none; width: 40px; height: 40px; padding: 0; font-size: 13px; }
+#trackBar .track-slider { flex: 1; min-width: 0; touch-action: none; }
+#trackBar .track-rate { flex: none; min-width: 6.5em; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  #trackBar { bottom: auto; top: 12px; }
+  body.tracking #hud { display: none; }
+  #trackBar button { padding: 10px 12px; min-height: 44px; }
+  #trackBar .track-play { width: 48px; height: 48px; }
+  #trackBar .track-slider { height: 44px; }
+  body.tracking #skyCard p, body.tracking #skyCard .preview, body.tracking #skyCard .track-btn { display: none; }   /* the bar has Stop */
+  body.tracking #skyCard { max-width: calc(100vw - 32px); }
+}

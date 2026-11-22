@@ -29,6 +29,14 @@
 </div>
 
 <div id="skyCard" hidden role="status" aria-live="polite"></div>
+<div id="trackBar" hidden>
+  <div class="track-head"><span class="track-name"></span><span class="track-actions"><button type="button" class="track-info" aria-pressed="true" title="Show or hide the info card">Info</button><button type="button" class="track-stop" title="Stop tracking">Stop</button><button type="button" class="track-close" aria-label="Close speed controls" title="Close">×</button></span></div>
+  <div class="track-speed" id="trackSpeed">
+    <button type="button" class="track-play" aria-label="Pause">❚❚</button>
+    <input type="range" class="track-slider" min="0" max="1000" step="1" aria-label="Time speed">
+    <output class="track-rate"></output>
+  </div>
+</div>
 
 <div id="hint">Drag to look around · Scroll or pinch to zoom · Shift-click the sky to move the radiant · Space pause · L constellations · I sky guide · H hide panel</div>
 
@@ -209,9 +217,12 @@
       <button type="button" data-t="1">Real time</button>
       <button type="button" data-t="60">60×</button>
       <button type="button" data-t="600">600×</button>
-      <button type="button" data-t="3600">3600×</button>
+      <button type="button" data-t="3600">1 h/s</button>
+      <button type="button" data-t="21600">6 h/s</button>
+      <button type="button" data-t="86400">1 day/s</button>
+      <button type="button" data-t="604800">1 week/s</button>
     </div>
-    <p class="note">Faster than real time, the clock and the turning sky speed up but meteors keep their real pace.</p>
+    <p class="note">Faster than real time, the clock and the turning sky speed up but meteors keep their real pace. To watch the Moon go through its phases, track it in the sky guide and pick 6 h/s or 1 day/s.</p>
   </section>
 
   <section>

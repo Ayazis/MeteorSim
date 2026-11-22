@@ -7,9 +7,11 @@
     nebula:  { label: 'Nebula',      color: [248, 180, 210] },
     galaxy:  { label: 'Galaxy',      color: [205, 190, 250] },
     hole:    { label: 'Black hole',  color: [250, 195, 160] },
+    moon:    { label: 'Moon',        color: [235, 232, 220] },
   };
   function category(o) {
     if (o.kind === 'star') return 'star';
+    if (o.kind === 'moon') return 'moon';
     const t = (o.t || '').toLowerCase();
     if (t.includes('black hole')) return 'hole';
     if (t.includes('galaxy')) return 'galaxy';
@@ -201,10 +203,23 @@
     g.globalCompositeOperation = 'lighter';
     const cat = category(o);
     if (cat === 'nebula' && o.t.toLowerCase().includes('dark')) g.globalCompositeOperation = 'source-over';
-    ({ star: drawStar, cluster: drawCluster, nebula: drawNebula, galaxy: drawGalaxy, hole: drawHole })[cat](g, w, h, o, R);
+    ({ star: drawStar, cluster: drawCluster, nebula: drawNebula, galaxy: drawGalaxy, hole: drawHole, moon: drawMoon })[cat](g, w, h, o, R);
     const url = cv.toDataURL('image/png');
     cache.set(key, url);
     return url;
+  }
+
+  // The Moon: a grey disc with darker maria.
+  function drawMoon(g, w, h) {
+    const x = w / 2, y = h / 2, r = Math.min(w, h) * 0.32;
+    const grad = g.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+    grad.addColorStop(0, '#f2efe6'); grad.addColorStop(1, '#a9a69d');
+    g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = 'rgba(90,90,95,0.35)';
+    for (const [dx, dy, s] of [[-0.25, -0.3, 0.28], [0.15, -0.2, 0.22], [0.2, 0.15, 0.2], [-0.1, 0.1, 0.16], [-0.35, 0.25, 0.12]]) {
+      g.beginPath(); g.arc(x + dx * r, y + dy * r, s * r, 0, Math.PI * 2); g.fill();
+    }
   }
 
   window.SkyCategories = { CATS, category, color: (o, a) => rgba(CATS[category(o)].color, a), preview };
