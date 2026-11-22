@@ -1920,7 +1920,7 @@
   // ---- looking around
   const pointers = new Map();
   let pinch = null;
-  // Double-click / double-tap or a long press on the sky turns the sky guide on and opens the card
+  // A double-click / double-tap toggles the sky guide; a long press turns it on. Turning it on opens the card
   // of whatever is under the finger. The guide's hit list is built while drawing, so if it was off,
   // wait two frames for it before picking the object.
   function guideOnAt(x, y) {
@@ -1986,7 +1986,8 @@
       const now = performance.now();
       if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
         lastTap = null;
-        guideOnAt(e.clientX, e.clientY);
+        if (S.guide) setGuide(false);   // a double-click toggles the guide; a long press only turns it on
+        else guideOnAt(e.clientX, e.clientY);
       } else {
         lastTap = { t: now, x: e.clientX, y: e.clientY };
         if (S.guide) guidePinned = guideAt(e.clientX, e.clientY);
